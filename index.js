@@ -72,26 +72,30 @@ app.post('/api/equipamentos/bulk', async (req, res) => {
     res.json({ success: true, count: equipamentos.length });
 });
 
-// Update Status/Assign to technician
+// Update Equipment
 app.put('/api/equipamentos/:id', async (req, res) => {
-    const id = req.params.id;
-    const { status, tecnico_id } = req.body;
-    
-    const updatePayload = { status };
-    if (tecnico_id !== undefined) updatePayload.tecnico_id = tecnico_id;
-    
-    // Config current date if status goes to Em Estoque
-    if (status === 'Em Estoque Técnico' && tecnico_id) {
-        updatePayload.data_distribuicao = new Date().toISOString();
-    }
-    
+    const { id } = req.params;
+    const { num_interno, serial, modelo } = req.body;
     const { data, error } = await supabase
         .from('equipamentos')
-        .update(updatePayload)
-        .eq('id', id);
-        
+        .update({ num_interno, serial, modelo })
+        .eq('id', id)
+        .select();
+
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true, changes: 1 });
+    res.json({ success: true, data: data[0] });
+});
+
+// Delete Equipment
+app.delete('/api/equipamentos/:id', async (req, res) => {
+    const { id } = req.params;
+    const { error } = await supabase
+        .from('equipamentos')
+        .delete()
+        .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
 });
 
 // Bulk assign to technician (Legacy for excel upload)
@@ -195,6 +199,44 @@ app.post('/api/tecnicos', async (req, res) => {
     if (!data || data.length === 0) return res.json({ success: true, message: "Técnico adicionado (sem retorno de ID)" });
     res.json({ success: true, id: data[0].id });
 });
+
+// Update Technician
+app.put('/api/tecnicos/:id', async (req, res) => {
+    const { id } = req.params;
+    const { nome, cidade_principal, sub_cidades } = req.body;
+    const { data, error } = await supabase
+        .from('tecnicos')
+        .update({ nome, cidade_principal, sub_cidades })
+        .eq('id', id)
+        .select();
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, data: data[0] });
+});
+
+// Delete Technician
+app.delete('/api/tecnicos/:id', async (req, res) => {
+    const { id } = req.params;
+    
+    // Check if technician has equipment first (optional but good practice)
+    const { count, error: countError } = await supabase
+        .from('equipamentos')
+        .select('*', { count: 'exact', head: true })
+        .eq('tecnico_id', id)
+        .eq('status', 'Em Estoque Técnico');
+    
+    if (countError) return res.status(500).json({ error: countError.message });
+    if (count > 0) return res.status(400).json({ error: "Não é possível excluir técnico com equipamentos em estoque." });
+
+    const { error } = await supabase
+        .from('tecnicos')
+        .delete()
+        .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
 app.get('/api/servicos', async (req, res) => {
     const { data, error } = await supabase
         .from('servicos')

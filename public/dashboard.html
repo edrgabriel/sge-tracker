@@ -198,6 +198,7 @@
                                         <th>Status</th>
                                         <th>Técnico</th>
                                         <th>Data Distribuição</th>
+                                        <th>Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody id="tbody-equipamentos">
@@ -259,6 +260,7 @@
                                     <th>Sub Cidades</th>
                                     <th>Qtd. Estoque</th>
                                     <th>Estoque</th>
+                                    <th>Ações</th>
                                 </tr>
                             </thead>
                             <tbody id="tbody-tecnicos">
@@ -619,6 +621,66 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('modal-add-tecnico')">Cancelar</button>
                 <button class="btn btn-primary" onclick="saveTecnico()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Editar Tecnico -->
+    <div class="modal-overlay" id="modal-edit-tecnico">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Editar Técnico</h3>
+                <button class="close-btn" onclick="closeModal('modal-edit-tecnico')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-tec-id">
+                <div class="form-group">
+                    <label>Nome do Técnico</label>
+                    <input type="text" id="edit-tec-nome">
+                </div>
+                <div class="form-group">
+                    <label>Cidade Principal</label>
+                    <input type="text" id="edit-tec-cidade">
+                </div>
+                <div class="form-group">
+                    <label>Sub Cidades (separadas por vírgula)</label>
+                    <input type="text" id="edit-tec-sub">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-edit-tecnico')">Cancelar</button>
+                <button class="btn btn-primary" onclick="updateTecnico()">Salvar Alterações</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Editar Equipamento -->
+    <div class="modal-overlay" id="modal-edit-equipamento">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Editar Equipamento</h3>
+                <button class="close-btn" onclick="closeModal('modal-edit-equipamento')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-eq-id">
+                <div class="form-group">
+                    <label>Número Interno (Máx 5 dígitos)</label>
+                    <input type="text" id="edit-eq-num" maxlength="5">
+                </div>
+                <div class="form-group">
+                    <label>Modelo do Equipamento</label>
+                    <select id="edit-eq-modelo-list">
+                        <option value="">-- Indefinido --</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Serial</label>
+                    <input type="text" id="edit-eq-serial">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-edit-equipamento')">Cancelar</button>
+                <button class="btn btn-primary" onclick="updateEquipamento()">Salvar Alterações</button>
             </div>
         </div>
     </div>

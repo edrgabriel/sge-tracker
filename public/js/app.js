@@ -170,6 +170,16 @@ function filterEquipamentos() {
                 <td><span class="status-badge ${statusClass}">${eq.status}</span></td>
                 <td>${eq.tecnico_nome || '-'}</td>
                 <td>${dDate}</td>
+                <td>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem;" onclick="editEquipamento(${eq.id})" title="Editar">
+                            <i class="fa-solid fa-pen-to-square"></i>
+                        </button>
+                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem; color:var(--danger);" onclick="deleteEquipamento(${eq.id})" title="Excluir">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
             </tr>
         `;
     });
@@ -201,6 +211,76 @@ async function saveEquipamento() {
             Swal.fire('Erro', err.error || err.message || 'Falha ao salvar', 'error');
         }
     } catch(e) { console.error(e); }
+}
+
+function editEquipamento(id) {
+    const eq = allEquipamentos.find(e => e.id === id);
+    if (!eq) return;
+
+    document.getElementById('edit-eq-id').value = eq.id;
+    document.getElementById('edit-eq-num').value = eq.num_interno;
+    document.getElementById('edit-eq-serial').value = eq.serial;
+    document.getElementById('edit-eq-modelo-list').value = eq.modelo || '';
+
+    openModal('modal-edit-equipamento');
+}
+
+async function updateEquipamento() {
+    const id = document.getElementById('edit-eq-id').value;
+    const num = document.getElementById('edit-eq-num').value.trim();
+    const serial = document.getElementById('edit-eq-serial').value.trim();
+    const modelo = document.getElementById('edit-eq-modelo-list').value;
+
+    if (!num || !serial) return Swal.fire('Atenção', 'Preencha Número Interno e Serial!', 'warning');
+
+    try {
+        const res = await fetch(`${API_URL}/equipamentos/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ num_interno: num, serial: serial, modelo: modelo })
+        });
+
+        if (res.ok) {
+            Swal.fire('Sucesso', 'Equipamento atualizado!', 'success');
+            closeModal('modal-edit-equipamento');
+            loadEquipamentos();
+        } else {
+            const err = await res.json();
+            Swal.fire('Erro', err.error || 'Falha ao atualizar', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Erro', 'Erro de conexão.', 'error');
+    }
+}
+
+async function deleteEquipamento(id) {
+    const result = await Swal.fire({
+        title: 'Tem certeza?',
+        text: "Esta ação não pode ser revertida!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Sim, excluir!',
+        cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const res = await fetch(`${API_URL}/equipamentos/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                Swal.fire('Deletado!', 'Equipamento excluído com sucesso.', 'success');
+                loadEquipamentos();
+            } else {
+                const err = await res.json();
+                Swal.fire('Erro', err.error || 'Falha ao excluir', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Erro', 'Erro de conexão.', 'error');
+        }
+    }
 }
 
 // === EXCEL MULTIPLE UPLOAD PREVIEW ===
@@ -329,9 +409,17 @@ async function loadTecnicos() {
                     <td>${subHTML}</td>
                     <td><span class="status-badge estoque" style="font-size:0.9rem">${t.qtd_estoque || 0}</span></td>
                     <td>
-                        <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem;" onclick="verEstoqueTecnico(${t.id}, '${t.nome}', '${t.cidade_principal}', '${t.sub_cidades || ''}')">
-                            <i class="fa-solid fa-box-open"></i> Ver Estoque
-                        </button>
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem;" onclick="verEstoqueTecnico(${t.id}, '${t.nome}', '${t.cidade_principal}', '${t.sub_cidades || ''}')">
+                                <i class="fa-solid fa-box-open"></i> Ver
+                            </button>
+                            <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem;" onclick="editTecnico(${t.id}, '${t.nome}', '${t.cidade_principal}', '${t.sub_cidades || ''}')" title="Editar">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </button>
+                            <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem; color:var(--danger);" onclick="deleteTecnico(${t.id})" title="Excluir">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
                     </td>
                 </tr>
             `;
@@ -397,6 +485,72 @@ async function saveTecnico() {
             Swal.fire('Erro', err.error || err.message || 'Falha ao salvar', 'error');
         }
     } catch(e) { console.error(e); }
+}
+
+function editTecnico(id, nome, cidade, sub) {
+    document.getElementById('edit-tec-id').value = id;
+    document.getElementById('edit-tec-nome').value = nome;
+    document.getElementById('edit-tec-cidade').value = cidade;
+    document.getElementById('edit-tec-sub').value = sub;
+    openModal('modal-edit-tecnico');
+}
+
+async function updateTecnico() {
+    const id = document.getElementById('edit-tec-id').value;
+    const nome = document.getElementById('edit-tec-nome').value;
+    const cid = document.getElementById('edit-tec-cidade').value;
+    const sub = document.getElementById('edit-tec-sub').value;
+
+    if (!nome || !cid) return Swal.fire('Atenção', 'Nome e Cidade são obrigatórios!', 'warning');
+
+    try {
+        const res = await fetch(`${API_URL}/tecnicos/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nome, cidade_principal: cid, sub_cidades: sub })
+        });
+
+        if (res.ok) {
+            Swal.fire('Sucesso', 'Técnico atualizado!', 'success');
+            closeModal('modal-edit-tecnico');
+            loadTecnicos();
+        } else {
+            const err = await res.json();
+            Swal.fire('Erro', err.error || 'Falha ao atualizar', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Erro', 'Erro de conexão.', 'error');
+    }
+}
+
+async function deleteTecnico(id) {
+    const result = await Swal.fire({
+        title: 'Tem certeza?',
+        text: "Esta ação não pode ser revertida e só funcionará se o técnico não tiver estoque!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Sim, excluir!',
+        cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const res = await fetch(`${API_URL}/tecnicos/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                Swal.fire('Deletado!', 'Técnico excluído com sucesso.', 'success');
+                loadTecnicos();
+            } else {
+                const err = await res.json();
+                Swal.fire('Erro', err.error || 'Falha ao excluir. Verifique se há equipamentos vinculados.', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Erro', 'Erro de conexão.', 'error');
+        }
+    }
 }
 
 // === DISTRIBUIÇÃO ===
@@ -830,6 +984,8 @@ function renderModelos() {
     modelosArray.forEach((t, i) => {
         if(container) container.innerHTML += `<div class="service-badge" style="background:#f3f4f6; color:#333; border:1px solid #ccc;">${t} <i class="fa-solid fa-xmark" style="cursor:pointer; color:#ef4444;" onclick="removerModeloEquip(${i})"></i></div>`;
         if(selModelo) selModelo.innerHTML += `<option value="${t}">${t}</option>`;
+        const selEditModelo = document.getElementById('edit-eq-modelo-list');
+        if(selEditModelo) selEditModelo.innerHTML += `<option value="${t}">${t}</option>`;
     });
 }
 
