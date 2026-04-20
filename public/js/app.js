@@ -15,7 +15,7 @@ function applyPermissions() {
     const navLogs = document.getElementById('nav-logs');
 
     if (role === 'master') {
-        if (navUsers) navUsers.style.display = 'flex';
+        if (navUsers) navUsers.style.setProperty('display', 'flex', 'important');
         if (navLogs) navLogs.style.display = 'flex';
     } else if (role === 'gerente') {
         if (navLogs) navLogs.style.display = 'flex';
@@ -95,6 +95,9 @@ function openModal(id) {
     if (modal) {
         console.log(`Abrindo modal: ${id}`);
         modal.classList.add('active');
+        setTimeout(() => {
+            console.log(`Estilo computado do modal ${id}:`, window.getComputedStyle(modal).display);
+        }, 50);
     } else {
         console.error(`Erro: Modal com ID "${id}" não encontrado!`);
     }

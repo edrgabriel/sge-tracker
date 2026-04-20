@@ -303,7 +303,7 @@ body {
     z-index: 100;
     backdrop-filter: blur(4px);
 }
-.modal-overlay.active { display: flex; }
+.modal-overlay.active { display: flex !important; }
 
 .modal {
     background: white;

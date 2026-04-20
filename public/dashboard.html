@@ -649,13 +649,11 @@
                     </div>
                 </section>
 
-            </div>
-        </main>
-    </div>
+            </div> <!-- End content-area -->
+        </main> <!-- End main-content -->
+    </div> <!-- End app-container -->
 
     <!-- MODALS -->
-
-    <!-- Modal Novo Equipamento removed (migrated to internal tab) -->
 
     <!-- Modal Novo Tecnico -->
     <div class="modal-overlay" id="modal-add-tecnico">
@@ -802,7 +800,7 @@
     <div class="modal-overlay" id="modal-ver-estoque">
         <div class="modal" style="width: 700px; max-width: 90vw;">
             <div class="modal-header">
-                <h3 id="modal-ver-estoque-title">Estoque do Técnico</h3>
+                <h3>Estoque do Técnico</h3>
                 <button class="close-btn" onclick="closeModal('modal-ver-estoque')"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body">
@@ -815,7 +813,6 @@
                         <i class="fa-solid fa-plus"></i> Registrar Serviço
                     </button>
                 </div>
-                <!-- table -->
                 <div style="max-height: 350px; overflow-y: auto;">
                     <table class="data-table">
                     <thead>
@@ -825,9 +822,7 @@
                             <th>Serial</th>
                         </tr>
                     </thead>
-                    <tbody id="tbody-estoque-tecnico">
-                        <!-- Populated via JS -->
-                    </tbody>
+                    <tbody id="tbody-estoque-tecnico"></tbody>
                 </table>
             </div>
             <div class="modal-footer">
