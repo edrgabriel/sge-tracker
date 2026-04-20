@@ -418,8 +418,10 @@ app.get('/api/stats', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`STOKI Server running at http://localhost:${PORT}`);
-});
+if (!process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`STOKI Server running at http://localhost:${PORT}`);
+    });
+}
 
 module.exports = app;
