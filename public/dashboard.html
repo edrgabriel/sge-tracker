@@ -250,35 +250,35 @@
                             <input type="file" id="file-upload" accept=".xlsx, .xls" style="display:none;" onchange="handleExcelUpload(event)">
                         </div>
                     </div>
-                </section>
 
-                <!-- ABA DEVOLVIDOS -->
-                <section id="equip-tab-devolvidos" class="tab-content" style="display:none;">
-                    <div class="action-bar card" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; padding: 15px;">
-                        <h3 style="margin:0; font-size: 1.1rem; color: var(--text-main);">Equipamentos em Devolução (Pendente)</h3>
-                        <div id="bulk-treatment-actions" style="display:none;">
-                            <button class="btn btn-primary" onclick="bulkTratarEquipamentos()">
-                                <i class="fa-solid fa-check-double"></i> Tratar Selecionados
-                            </button>
+                    <!-- ABA DEVOLVIDOS -->
+                    <div id="equip-tab-devolvidos" class="tab-content" style="display:none;">
+                        <div class="action-bar card" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; padding: 15px;">
+                            <h3 style="margin:0; font-size: 1.1rem; color: var(--text-main);">Equipamentos em Devolução (Pendente)</h3>
+                            <div id="bulk-treatment-actions" style="display:none;">
+                                <button class="btn btn-primary" onclick="bulkTratarEquipamentos()">
+                                    <i class="fa-solid fa-check-double"></i> Tratar Selecionados
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                    <div class="card table-card">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th style="width: 40px;"><input type="checkbox" id="check-all-devolvidos" onclick="toggleAllDevolvidos()"></th>
-                                    <th>Nº Interno</th>
-                                    <th>Serial</th>
-                                    <th>Técnico de Origem</th>
-                                    <th>Placa do Serviço</th>
-                                    <th>Data Retorno</th>
-                                    <th>Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody id="tbody-devolvidos">
-                                <!-- Populated via JS -->
-                            </tbody>
-                        </table>
+                        <div class="card table-card">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 40px;"><input type="checkbox" id="check-all-devolvidos" onclick="toggleAllDevolvidos()"></th>
+                                        <th>Nº Interno</th>
+                                        <th>Serial</th>
+                                        <th>Técnico de Origem</th>
+                                        <th>Placa do Serviço</th>
+                                        <th>Data Retorno</th>
+                                        <th>Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-devolvidos">
+                                    <!-- Populated via JS -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </section>
 
