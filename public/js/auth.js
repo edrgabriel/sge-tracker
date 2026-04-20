@@ -192,6 +192,25 @@ async function apiFetch(endpoint, options = {}) {
     return response;
 }
 
+async function handleLogout() {
+    await window.supabaseClient.auth.signOut();
+    localStorage.removeItem('stoki_role');
+    localStorage.removeItem('stoki_email');
+    window.location.href = 'index.html';
+}
+
+function toggleAuthMode(mode) {
+    const loginForm = document.getElementById('form-login-wrapper');
+    const regForm = document.getElementById('form-register-wrapper');
+    if (mode === 'register') {
+        loginForm.classList.remove('active');
+        regForm.classList.add('active');
+    } else {
+        regForm.classList.remove('active');
+        loginForm.classList.add('active');
+    }
+}
+
 // Bind to window to be accessible from html
 window.handleLogin = handleLogin;
 window.handleRegister = handleRegister;
