@@ -699,3 +699,10 @@ body {
 .premium-swal .swal2-confirm { border-radius: 10px !important; background-color: var(--primary) !important; }
 .premium-swal .swal2-input { color: #fff !important; }
 
+
+/* Status Deletado */
+.badge.deletado, .status-badge.deletado {
+  background-color: #e2e3e5;
+  color: #383d41;
+  border: 1px solid #d6d8db;
+}

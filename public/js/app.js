@@ -1775,10 +1775,39 @@ function renderRelatorioTable(data) {
                 <button class="btn btn-secondary btn-sm" onclick="verHistorico('${row.equipamento_id}')">
                     <i class="fa-solid fa-clock-rotate-left"></i> Ver Ciclo
                 </button>
+                ${(row.status_atual === 'Deletado' && ['master', 'gerente'].includes(localStorage.getItem('stoki_role'))) 
+                    ? `<button class="btn btn-warning btn-sm" style="margin-left: 5px; background-color: #ffc107; border: none; color: #000;" onclick="restaurarEquipamento('${row.equipamento_id}')"><i class="fa-solid fa-trash-can-arrow-up"></i> Restaurar</button>` 
+                    : ''}
             </td>
         `;
         tbody.appendChild(tr);
     });
+}
+
+// === SOFT DELETE RESTORE ACTION ===
+async function restaurarEquipamento(id) {
+    const result = await Swal.fire({
+        title: 'Restaurar Ratreamento?',
+        text: 'Este equipamento será retirado da lixeira e voltará ao estoque principal.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Restaurar',
+        cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const res = await apiFetch(`${API_URL}/equipamentos/${id}/restaurar`, { method: 'PUT' });
+            if (res.ok) {
+                Swal.fire('Restaurado!', 'O equipamento está ativo novamente.', 'success');
+                loadRelatorios();
+            }
+        } catch (e) {
+            Swal.fire({ icon: 'error', title: 'Falha ao Restaurar', text: e.message || 'Houve um conflito na restauração.'});
+        }
+    }
 }
 
 function filterRelatorioDev() {
@@ -1861,5 +1890,6 @@ function getStatusClass(status) {
     if (s.includes('instalado')) return 'instalado';
     if (s.includes('pendente')) return 'pendente';
     if (s.includes('distribuído')) return 'estoque';
+    if (s.includes('deletado')) return 'deletado';
     return '';
 }
