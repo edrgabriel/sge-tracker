@@ -90,8 +90,26 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // === MODAL HELPERS ===
-function openModal(id) { document.getElementById(id).classList.add('active'); }
-function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+function openModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+        console.log(`Abrindo modal: ${id}`);
+        modal.classList.add('active');
+    } else {
+        console.error(`Erro: Modal com ID "${id}" não encontrado!`);
+    }
+}
+
+function closeModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+        modal.classList.remove('active');
+    }
+}
+
+// Bind to window to ensure HTML onclick can always find them
+window.openModal = openModal;
+window.closeModal = closeModal;
 
 // === DASHBOARD ===
 let chartObjStatus = null;
