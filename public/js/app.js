@@ -24,9 +24,10 @@ function applyPermissions() {
     // Ocultar botões baseado no cargo (Lógica global)
     if (role === 'visualizador') {
         document.querySelectorAll('.btn-primary, .fab-container').forEach(el => {
-            if (!el.innerText.includes('Exportar') && !el.innerText.includes('Baixar') && !el.innerText.includes('Relatório')) {
-                el.style.display = 'none';
-            }
+            const txt = el.innerText.toLowerCase();
+            const exceptions = ['exportar', 'baixar', 'relatório', 'gerar'];
+            const shouldHide = !exceptions.some(ex => txt.includes(ex));
+            if (shouldHide) el.style.display = 'none';
         });
     }
 
@@ -61,6 +62,7 @@ document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
         
         // Load respective data
         loadViewData(target);
+        applyPermissions(); // Re-apply to ensure inner buttons are hidden/shown
     });
 });
 
