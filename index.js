@@ -214,7 +214,7 @@ app.delete('/api/equipamentos/:id', restrictTo('master'), async (req, res) => {
 });
 
 // Bulk assign to technician (Legacy for excel upload)
-app.post('/api/equipamentos/assign', async (req, res) => {
+app.post('/api/equipamentos/assign', restrictTo('master', 'gerente', 'operador'), async (req, res) => {
     const { ids, tecnico_id } = req.body;
     if (!ids || !ids.length || !tecnico_id) return res.status(400).json({ error: "Missing data" });
 
@@ -396,7 +396,7 @@ app.get('/api/servicos', async (req, res) => {
     res.json(rows);
 });
 
-app.post('/api/servicos', async (req, res) => {
+app.post('/api/servicos', restrictTo('master', 'gerente', 'operador'), async (req, res) => {
     const { equipamento_id, tecnico_id, tipo_servico, data: clientData, placa_obs } = req.body;
     const srvData = clientData || new Date().toISOString();
     
@@ -431,7 +431,7 @@ app.post('/api/servicos', async (req, res) => {
     res.json({ success: true, message: "Serviço registrado com sucesso." });
 });
 
-app.post('/api/servicos/bulk', async (req, res) => {
+app.post('/api/servicos/bulk', restrictTo('master', 'gerente', 'operador'), async (req, res) => {
     const payloads = req.body; // array of { serial, tipo_servico, data, placa_obs }
     const today = new Date().toISOString();
     
@@ -495,7 +495,7 @@ app.post('/api/servicos/bulk', async (req, res) => {
 });
 
 // Recolher equipamentos instalados de volta para base
-app.post('/api/equipamentos/recolher', async (req, res) => {
+app.post('/api/equipamentos/recolher', restrictTo('master', 'gerente', 'operador'), async (req, res) => {
     const payloads = req.body; // array of { serial, placa_obs } or strings
     if (!payloads || !payloads.length) return res.status(400).json({ error: "Missing data" });
 
@@ -663,7 +663,7 @@ app.get('/api/configuracoes', async (req, res) => {
     res.json(data);
 });
 
-app.put('/api/configuracoes/:chave', async (req, res) => {
+app.put('/api/configuracoes/:chave', restrictTo('master', 'gerente'), async (req, res) => {
     const { valor } = req.body;
     const { error } = await supabase
         .from('configuracoes')
