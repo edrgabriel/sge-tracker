@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STOKI - Controle de Estoque de Ativos</title>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SweetAlert2 -->
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+    
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/supabase.js"></script>
+    <script src="js/auth.js"></script>
+
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <i class="fa-solid fa-box-open"></i>
+                    <span>STOKI</span>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-target="dashboard">
+                    <i class="fa-solid fa-house"></i> Dashboard
+                </a>
+                <a href="#" class="nav-item" data-target="equipamentos">
+                    <i class="fa-solid fa-server"></i> Equipamentos
+                </a>
+                <a href="#" class="nav-item" data-target="tecnicos">
+                    <i class="fa-solid fa-users-gear"></i> Técnicos
+                </a>
+                <a href="#" class="nav-item" data-target="distribuicao">
+                    <i class="fa-solid fa-truck-ramp-box"></i> Distribuição
+                </a>
+                <a href="#" class="nav-item" data-target="servicos">
+                    <i class="fa-solid fa-clipboard-check"></i> Serviços
+                </a>
+                <a href="#" class="nav-item" data-target="configuracoes">
+                    <i class="fa-solid fa-gear"></i> Configurações
+                </a>
+                <a href="#" class="nav-item" data-target="relatorios">
+                    <i class="fa-solid fa-chart-pie"></i> Relatórios
+                </a>
+                <a href="#" class="nav-item" data-target="templates">
+                    <i class="fa-solid fa-file-csv"></i> Modelos Excel
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <p>v1.0.0 &copy; 2026</p>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <h1 id="page-title">Dashboard</h1>
+                <div class="user-profile">
+                    <div class="avatar"><i class="fa-solid fa-user"></i></div>
+                    <span>Admin</span>
+                    <button onclick="handleLogout()" class="btn btn-secondary" style="margin-left: 15px; padding: 6px 12px; font-size: 0.85rem; border: 1px solid var(--border-color); cursor:pointer;">
+                        <i class="fa-solid fa-right-from-bracket" style="color:var(--danger)"></i> Sair
+                    </button>
+                </div>
+            </header>
+
+            <div class="content-area">
+                
+                <!-- VIEW: DASHBOARD -->
+                <section id="view-dashboard" class="view-section active">
+                    <div class="stats-grid">
+                        <div class="stat-card blue">
+                            <div class="stat-icon"><i class="fa-solid fa-boxes-stacked"></i></div>
+                            <div class="stat-info">
+                                <h3>Total Ativos</h3>
+                                <p id="stat-total">0</p>
+                            </div>
+                        </div>
+                        <div class="stat-card green">
+                            <div class="stat-icon"><i class="fa-solid fa-check-circle"></i></div>
+                            <div class="stat-info">
+                                <h3>Disponíveis</h3>
+                                <p id="stat-disp">0</p>
+                            </div>
+                        </div>
+                        <div class="stat-card orange">
+                            <div class="stat-icon"><i class="fa-solid fa-truck-fast"></i></div>
+                            <div class="stat-info">
+                                <h3>Com Técnicos</h3>
+                                <p id="stat-tech">0</p>
+                            </div>
+                        </div>
+                        <div class="stat-card purple">
+                            <div class="stat-icon"><i class="fa-solid fa-screwdriver-wrench"></i></div>
+                            <div class="stat-info">
+                                <h3>Instalados</h3>
+                                <p id="stat-inst">0</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dashboard Charts Area -->
+                    <div class="charts-container" style="display: flex; gap: 20px; margin-top: 20px;">
+                        <div class="card" style="flex: 1; max-width: 400px; display: flex; flex-direction: column; align-items: center;">
+                            <h3 style="margin-bottom: 20px; color: var(--text-muted); font-size: 1rem;">Equipamentos por Status</h3>
+                            <div style="position: relative; width: 100%; max-width: 250px; aspect-ratio: 1; margin: auto;">
+                                <canvas id="chartStatus"></canvas>
+                            </div>
+                        </div>
+                        <div class="card" style="flex: 2;">
+                            <h3 style="margin-bottom: 20px; color: var(--text-muted); font-size: 1rem;">Estoque por Técnico</h3>
+                            <div style="position: relative; width: 100%; height: 250px;">
+                                <canvas id="chartTechs"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dashboard Tables Area -->
+                    <div style="display: flex; gap: 20px; margin-top: 20px; flex-wrap: wrap;">
+                        <div class="card table-card" style="flex: 1; min-width: 300px;">
+                            <h3 style="padding: 20px; border-bottom: 1px solid var(--border-color); color: var(--text-muted); font-size: 1rem;">Top 5 Técnicos (Estoque)</h3>
+                            <table class="data-table">
+                                <thead><tr><th>Técnico</th><th>Quantidade</th></tr></thead>
+                                <tbody id="tbody-top-techs"></tbody>
+                            </table>
+                        </div>
+                        
+                        <div class="card table-card" style="flex: 2; min-width: 400px;">
+                            <h3 style="padding: 20px; border-bottom: 1px solid var(--border-color); color: var(--text-muted); font-size: 1rem;">Últimos 10 Serviços</h4>
+                            <table class="data-table">
+                                <thead><tr><th>Data</th><th>Técnico</th><th>Serial</th><th>Tipo</th></tr></thead>
+                                <tbody id="tbody-last-srvs"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Floating Action Buttons -->
+                    <div class="fab-container">
+                        <button class="fab-btn secondary" title="Distribuir Equipamentos" onclick="document.querySelector('[data-target=\'distribuicao\']').click()">
+                            <i class="fa-solid fa-truck-fast"></i>
+                        </button>
+                        <button class="fab-btn primary" title="Novo Serviço" onclick="document.querySelector('[data-target=\'servicos\']').click(); setTimeout(() => openModal('modal-add-servico'), 100)">
+                            <i class="fa-solid fa-plus"></i> Novo Serviço
+                        </button>
+                    </div>
+                </section>
+
+                <!-- VIEW: EQUIPAMENTOS -->
+                <section id="view-equipamentos" class="view-section">
+                    
+                    <div class="tabs-container" style="margin-bottom: 20px;">
+                        <button class="tab-btn active" onclick="switchEquipTab('lista')">Lista de Equipamentos</button>
+                        <button class="tab-btn" onclick="switchEquipTab('cadastrar')">Cadastrar Equipamento</button>
+                    </div>
+
+                    <!-- ABA LISTA -->
+                    <div id="equip-tab-lista" class="tab-content active">
+                        <div class="action-bar filters-bar card" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:20px; padding: 15px;">
+                            <div class="form-group" style="margin:0; flex:1; min-width: 150px;">
+                                <label style="font-size:0.8rem">Status</label>
+                                <select id="filter-eq-status" onchange="filterEquipamentos()">
+                                    <option value="">Todos</option>
+                                    <option value="Disponível">Disponível</option>
+                                    <option value="Em Estoque Técnico">Em Estoque Técnico</option>
+                                    <option value="Instalado">Instalado</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin:0; flex:1; min-width: 150px;">
+                                <label style="font-size:0.8rem">Nº Interno</label>
+                                <input type="text" id="filter-eq-num" oninput="filterEquipamentos()" placeholder="Buscar...">
+                            </div>
+                            <div class="form-group" style="margin:0; flex:1; min-width: 150px;">
+                                <label style="font-size:0.8rem">Serial</label>
+                                <input type="text" id="filter-eq-ser" oninput="filterEquipamentos()" placeholder="Buscar...">
+                            </div>
+                            <div class="form-group" style="margin:0; flex:1; min-width: 150px;">
+                                <label style="font-size:0.8rem">Técnico</label>
+                                <input type="text" id="filter-eq-tec" oninput="filterEquipamentos()" placeholder="Nome...">
+                            </div>
+                        </div>
+
+                        <div class="card table-card">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Nº Interno</th>
+                                        <th>Modelo</th>
+                                        <th>Serial</th>
+                                        <th>Status</th>
+                                        <th>Técnico</th>
+                                        <th>Data Distribuição</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-equipamentos">
+                                    <!-- Data populated via JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- ABA CADASTRAR -->
+                    <div id="equip-tab-cadastrar" class="tab-content" style="display:none;">
+                        <div class="card" style="max-width: 600px; margin-bottom: 20px;">
+                            <h2>Cadastro Manual Individual</h2>
+                            <div class="form-group" style="margin-top:20px;">
+                                <label>Número Interno (Máx 5 dígitos)</label>
+                                <input type="text" id="eq-num" maxlength="5">
+                            </div>
+                            <div class="form-group">
+                                <label>Modelo do Equipamento</label>
+                                <select id="eq-modelo">
+                                    <option value="">-- Indefinido --</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Serial</label>
+                                <input type="text" id="eq-serial">
+                            </div>
+                            <button class="btn btn-primary" onclick="saveEquipamento()">Salvar Individual</button>
+                        </div>
+                        
+                        <div class="card" style="max-width: 600px;">
+                            <h2>Upload em Massa (Excel)</h2>
+                            <p style="margin:10px 0; font-size:0.9rem; color:var(--text-muted);">
+                                A planilha deve conter as colunas <strong>numero_interno</strong> e <strong>serial</strong>.
+                            </p>
+                            <button class="btn btn-secondary" onclick="document.getElementById('file-upload').click()">
+                                <i class="fa-solid fa-file-excel"></i> Selecionar Planilha (.xlsx)
+                            </button>
+                            <input type="file" id="file-upload" accept=".xlsx, .xls" style="display:none;" onchange="handleExcelUpload(event)">
+                        </div>
+                    </div>
+                </section>
+
+                <!-- VIEW: TECNICOS -->
+                <section id="view-tecnicos" class="view-section">
+                    <div class="action-bar">
+                        <h2>Gestão de Técnicos</h2>
+                        <button class="btn btn-primary" onclick="openModal('modal-add-tecnico')">
+                            <i class="fa-solid fa-plus"></i> Novo Técnico
+                        </button>
+                    </div>
+                    <div class="card table-card">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Nome</th>
+                                    <th>Cidade Principal</th>
+                                    <th>Sub Cidades</th>
+                                    <th>Qtd. Estoque</th>
+                                    <th>Estoque</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-tecnicos">
+                                <!-- Data populated via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                </section>
+
+                <!-- VIEW: DISTRIBUICAO -->
+                <section id="view-distribuicao" class="view-section">
+                    <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 30px;">
+                        <!-- Card: Mass Assingment -->
+                        <div class="card" style="flex: 1; min-width: 300px;">
+                            <h2 style="margin-bottom: 10px;">
+                                <i class="fa-solid fa-truck-ramp-box" style="color:var(--primary)"></i> Distribuição em Massa
+                            </h2>
+                            <p style="margin-bottom: 15px; font-size:0.9rem; color:var(--text-muted);">
+                                Prioridade! Faça upload do Excel contendo as colunas: <br>
+                                <strong>numero_interno</strong> (ou serial) e <strong>nome_tecnico</strong> (ou ID).
+                            </p>
+                            <button class="btn btn-secondary" onclick="document.getElementById('file-upload-assign').click()">
+                                <i class="fa-solid fa-file-excel"></i> Upload Planilha de Distribuição
+                            </button>
+                            <input type="file" id="file-upload-assign" accept=".xlsx, .xls" style="display:none;" onchange="handleAssignUpload(event)">
+                        </div>
+
+                        <!-- Card: Individual Assignment -->
+                        <div class="card" style="flex: 1; min-width: 300px;">
+                            <h2 style="margin-bottom: 10px;">
+                                <i class="fa-solid fa-user-check" style="color:var(--warning)"></i> Distribuição Individual
+                            </h2>
+                            <div class="form-group" style="margin-bottom: 10px;">
+                                <label style="font-size:0.85rem;">Origem (De onde está saindo?)</label>
+                                <select id="dist-individual-origem" onchange="loadDistribuicaoEquipamentos()">
+                                    <option value="base">Base (Estoque Principal - Disponível)</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 10px;">
+                                <label style="font-size:0.85rem;">Equipamentos (Segure CTRL para vários)</label>
+                                <input type="text" id="filter-dist-eq" placeholder="Pesquisar S/N..." style="padding: 6px; width: 100%; border:1px solid #ccc; border-radius: 4px; border-bottom-left-radius: 0; border-bottom-right-radius: 0;" onkeyup="filterDistEquipamentos()">
+                                <select id="dist-individual-eq" multiple size="5" style="border-top-left-radius: 0; border-top-right-radius: 0; margin-top: -1px; width: 100%;"></select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 10px;">
+                                <label style="font-size:0.85rem;">Destino (Para onde vai?)</label>
+                                <select id="dist-individual-tec"></select>
+                            </div>
+                            <button class="btn btn-primary" onclick="salvarDistribuicaoIndividual()" style="width:100%; justify-content:center;"><i class="fa-solid fa-arrows-turn-right" style="margin-right:5px"></i> Processar Movimentação</button>
+                        </div>
+                    </div>
+
+                    <div class="card table-card">
+                        <h3 style="padding: 20px; border-bottom: 1px solid var(--border-color); color: var(--text-muted); font-size: 1rem;">
+                            Histórico de Últimas Distribuições (20)
+                        </h3>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Nº Interno</th>
+                                    <th>Serial</th>
+                                    <th>Técnico Destino</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-distribuicoes">
+                                <!-- Data populated via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- VIEW: SERVICOS -->
+                <section id="view-servicos" class="view-section">
+                    <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;">
+                        <div class="card" style="flex: 1; min-width: 300px;">
+                            <h2 style="margin-bottom: 10px;">Registrar Serviço</h2>
+                            <p style="margin-bottom: 15px; font-size:0.9rem; color:var(--text-muted);">
+                                Registrar serviço manual para uma peça em estoque.
+                            </p>
+                            <button class="btn btn-primary" onclick="openModal('modal-add-servico')">
+                                <i class="fa-solid fa-plus"></i> Novo Serviço Individual
+                            </button>
+                        </div>
+
+                        <div class="card" style="flex: 1; min-width: 300px;">
+                            <h2 style="margin-bottom: 10px;"><i class="fa-solid fa-file-excel" style="color:var(--success)"></i> Baixa em Massa (Excel)</h2>
+                            <p style="margin-bottom: 15px; font-size:0.9rem; color:var(--text-muted);">
+                                Planilha com as colunas: <strong>serial</strong> e <strong>tipo_servico</strong>. Optional: data. O sistema finalizará o ciclo da peça e fará tudo automaticamente.
+                            </p>
+                            <button class="btn btn-secondary" onclick="document.getElementById('file-upload-srvs').click()">
+                                Fazer Upload Excel
+                            </button>
+                            <input type="file" id="file-upload-srvs" accept=".xlsx, .xls" style="display:none;" onchange="handleServicosUpload(event)">
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;">
+                        <div class="card" style="flex: 1; min-width: 300px; border-left: 4px solid var(--warning);">
+                            <h2 style="margin-bottom: 10px;"><i class="fa-solid fa-rotate-left"></i> Desinstalar / Recolher</h2>
+                            <p style="margin-bottom: 15px; font-size:0.9rem; color:var(--text-muted);">
+                                Retirar equipamento 'Instalado' e enviá-lo de volta para a Base (Disponível).
+                            </p>
+                            <div class="form-group row-flex" style="margin-top: 10px;">
+                                <input type="text" id="recolher-serial-manual" placeholder="S/N..." style="flex:1;">
+                                <button class="btn btn-secondary" onclick="recolherEquipamentoManual()">
+                                    Recolher
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card" style="flex: 1; min-width: 300px; border-left: 4px solid var(--warning);">
+                            <h2 style="margin-bottom: 10px;"><i class="fa-solid fa-file-excel"></i> Desinstalar em Massa</h2>
+                            <p style="margin-bottom: 15px; font-size:0.9rem; color:var(--text-muted);">
+                                Faça upload de um Excel contendo a coluna <strong>serial</strong>.
+                            </p>
+                            <button class="btn btn-secondary" onclick="document.getElementById('file-upload-recolher').click()" style="margin-top: 10px; margin-right: 10px;">
+                                Upload Planilha de Recolhimento
+                            </button>
+                            <button class="btn btn-secondary" style="background:#f3f4f6; color:#111827; margin-top: 10px;" onclick="downloadTemplateRemocao()">
+                                <i class="fa-solid fa-download"></i> Baixar Template
+                            </button>
+                            <input type="file" id="file-upload-recolher" accept=".xlsx, .xls" style="display:none;" onchange="handleRecolherUpload(event)">
+                        </div>
+                    </div>
+                    
+                    <div class="card table-card">
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px;">
+                            <h3 style="color:var(--text-color); margin:0;">Histórico de Serviços</h3>
+                            <input type="text" id="search-servicos" placeholder="Pesquisar histórico..." style="padding:8px 12px; border:1px solid var(--border-color); border-radius:5px; width:250px;" onkeyup="pesquisarServicos()">
+                        </div>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Técnico</th>
+                                    <th>Nº Interno</th>
+                                    <th>Serial</th>
+                                    <th>Tipo Serviço</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-servicos">
+                                <!-- Data populated via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- VIEW: RELATORIOS -->
+                <section id="view-relatorios" class="view-section">
+                    <div class="action-bar">
+                        <h2>Relatórios Consolidados</h2>
+                        <button class="btn btn-secondary" onclick="exportFullDatabase()"><i class="fa-solid fa-file-excel" style="color:var(--success);"></i> Exportar Base Ativa Completa</button>
+                    </div>
+                    
+                    <div style="display: flex; flex-direction: column; gap:15px; margin-top: 20px;">
+                        
+                        <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+                            <div>
+                                <h3 style="margin-bottom: 5px;"><i class="fa-solid fa-boxes-stacked"></i> Estoque Total por Técnico</h3>
+                                <p style="color:var(--text-muted); font-size:0.9rem;">Quantidade consolidada e lista completa de Seriais ativos 'Em Estoque Técnico'.</p>
+                            </div>
+                            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                                <button class="btn btn-secondary" onclick="relatorioEstoque(false)"><i class="fa-solid fa-eye"></i> Visualizar na Tela</button>
+                                <button class="btn btn-primary" onclick="relatorioEstoque(true)"><i class="fa-solid fa-file-excel"></i> Exportar</button>
+                            </div>
+                        </div>
+
+                        <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+                            <div>
+                                <h3 style="margin-bottom: 5px;"><i class="fa-solid fa-screwdriver-wrench"></i> Equipamentos Instalados por Técnico</h3>
+                                <p style="color:var(--text-muted); font-size:0.9rem;">Visão agrupada do saldo final de peças na rua atreladas à responsabilidade do instalador.</p>
+                            </div>
+                            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                                <button class="btn btn-secondary" onclick="relatorioInstalados(false)"><i class="fa-solid fa-eye"></i> Visualizar na Tela</button>
+                                <button class="btn btn-primary" onclick="relatorioInstalados(true)"><i class="fa-solid fa-file-excel"></i> Exportar</button>
+                            </div>
+                        </div>
+                        
+                        <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+                            <div>
+                                <h3 style="margin-bottom: 5px;"><i class="fa-solid fa-map-location-dot"></i> Inventário Distribuído por Cidades</h3>
+                                <p style="color:var(--text-muted); font-size:0.9rem;">Mapeia a quantidade de equipamentos em trânsito com técnicos agrupadas por Base/Cidades de atuação.</p>
+                            </div>
+                            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                                <button class="btn btn-secondary" onclick="relatorioCidades(false)"><i class="fa-solid fa-eye"></i> Visualizar na Tela</button>
+                                <button class="btn btn-primary" onclick="relatorioCidades(true)"><i class="fa-solid fa-file-excel"></i> Exportar</button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h3 style="margin-bottom: 5px;"><i class="fa-solid fa-clipboard-list"></i> Histórico Completo de Serviços</h3>
+                            <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom: 10px;">Auditoria rigorosa de longo prazo. Filtre para investigar transações com peças.</p>
+                            <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
+                                <div class="form-group" style="margin:0;"><label style="font-size:0.75rem;">Data Inicial</label><input type="date" id="rel_srv_i"></div>
+                                <div class="form-group" style="margin:0;"><label style="font-size:0.75rem;">Data Final</label><input type="date" id="rel_srv_f"></div>
+                                <div class="form-group" style="margin:0;"><label style="font-size:0.75rem;">Técnico</label><select id="rel_srv_tec"><option value="">-- Todos Técnicos --</option></select></div>
+                                <div class="form-group" style="margin:0;"><label style="font-size:0.75rem;">Serviço</label><select id="rel_srv_tipo"><option value="">-- Todos os Tipos --</option></select></div>
+                            </div>
+                            <div style="display:flex; gap: 10px;">
+                                <button class="btn btn-secondary" onclick="relatorioSrvHist(false)"><i class="fa-solid fa-eye"></i> Visualizar na Tela</button>
+                                <button class="btn btn-primary" onclick="relatorioSrvHist(true)"><i class="fa-solid fa-file-excel"></i> Exportar Customizado</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- VIEW: TEMPLATES -->
+                <section id="view-templates" class="view-section">
+                    <div class="action-bar">
+                        <h2>Modelos de Upload / Instruções</h2>
+                        <p style="color:var(--text-muted); font-size:1rem; margin-top:-5px;">Faça o download das planilhas exemplificadas para não errar no preenchimento de lotes.</p>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; margin-top: 15px;">
+                        
+                        <!-- Card 1 -->
+                        <div class="card" style="display:flex; flex-direction:column; justify-content:space-between;">
+                            <div>
+                                <h3 style="margin-bottom: 10px; color:var(--primary);"><i class="fa-solid fa-box"></i> Cadastro de Equipamentos</h3>
+                                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom: 15px;">Utilize este formato quando o laboratório enviar novos equipamentos para abastecer a base (Status Disponível).</p>
+                                
+                                <table class="data-table" style="font-size:0.75rem; margin-bottom:15px; border:1px solid #ccc;">
+                                    <thead style="background:#f1f5f9;"><tr><th>numero_interno</th><th>serial</th></tr></thead>
+                                    <tbody><tr><td>10245</td><td>SN12345678</td></tr><tr><td>10246</td><td>SN12345679</td></tr></tbody>
+                                </table>
+                                
+                                <ul style="font-size:0.8rem; margin-bottom: 20px; color: #555; padding-left: 20px;">
+                                    <li><b>numero_interno:</b> Máximo de 5 dígitos!</li>
+                                    <li><b>serial:</b> Obrigatório, campo alfanumérico.</li>
+                                </ul>
+                            </div>
+                            <button class="btn btn-secondary" style="width:100%; border:1px solid var(--success); color:var(--success);" onclick="dlTemplateEquip()"><i class="fa-solid fa-download"></i> Baixar Template.xlsx</button>
+                        </div>
+
+                        <!-- Card 2 -->
+                        <div class="card" style="display:flex; flex-direction:column; justify-content:space-between;">
+                            <div>
+                                <h3 style="margin-bottom: 10px; color:var(--primary);"><i class="fa-solid fa-truck-fast"></i> Distribuição em Massa</h3>
+                                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom: 15px;">Para envio da sede aos porta-malas. Aloca os ativos ao respectivo técnico lendo pelo Serial escolhido.</p>
+                                
+                                <table class="data-table" style="font-size:0.75rem; margin-bottom:15px; border:1px solid #ccc;">
+                                    <thead style="background:#f1f5f9;"><tr><th>numero_interno</th><th>serial</th><th>nome_tecnico</th></tr></thead>
+                                    <tbody><tr><td>10245</td><td>SN12345678</td><td>Paulo Silva</td></tr></tbody>
+                                </table>
+                                
+                                <ul style="font-size:0.8rem; margin-bottom: 20px; color: #555; padding-left: 20px;">
+                                    <li><b>numero_interno/serial:</b> Preencher ao menos um!</li>
+                                    <li><b>nome_tecnico:</b> Aceita nome limpo (ex: Paulo Silva) ou a exata ID numérica correspondente.</li>
+                                </ul>
+                            </div>
+                            <button class="btn btn-secondary" style="width:100%; border:1px solid var(--success); color:var(--success);" onclick="dlTemplateDist()"><i class="fa-solid fa-download"></i> Baixar Template.xlsx</button>
+                        </div>
+
+                        <!-- Card 3 -->
+                        <div class="card" style="display:flex; flex-direction:column; justify-content:space-between;">
+                            <div>
+                                <h3 style="margin-bottom: 10px; color:var(--primary);"><i class="fa-solid fa-wrench"></i> Registro de Serviços Concluídos</h3>
+                                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom: 15px;">Usado no Fim do Dia para baixar todas O.S. de uma vez. O STOKI deduz sozínho os técnicos a partir do serial.</p>
+                                
+                                <table class="data-table" style="font-size:0.75rem; margin-bottom:15px; border:1px solid #ccc;">
+                                    <thead style="background:#f1f5f9;"><tr><th>serial</th><th>tipo_servico</th><th>data</th></tr></thead>
+                                    <tbody><tr><td>SN12345678</td><td>Instalação</td><td>2026-04-18</td></tr></tbody>
+                                </table>
+                                
+                                <ul style="font-size:0.8rem; margin-bottom: 20px; color: #555; padding-left: 20px;">
+                                    <li><b>serial:</b> Apenas ele já acha o técnico!</li>
+                                    <li><b>tipo_servico:</b> Deve bater exatamente com a nomenclatura das configurações (ex: Manutenção).</li>
+                                </ul>
+                            </div>
+                            <button class="btn btn-secondary" style="width:100%; border:1px solid var(--success); color:var(--success);" onclick="dlTemplateServ()"><i class="fa-solid fa-download"></i> Baixar Template.xlsx</button>
+                        </div>
+
+                        <!-- Card 4 -->
+                        <div class="card" style="display:flex; flex-direction:column; justify-content:space-between;">
+                            <div>
+                                <h3 style="margin-bottom: 10px; color:var(--primary);"><i class="fa-solid fa-users-gear"></i> Setup Tropa de Técnicos</h3>
+                                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom: 15px;">Use este molde opcional caso necessite dar upload na lista inicial de funcionários ao criar a base do zero.</p>
+                                
+                                <table class="data-table" style="font-size:0.75rem; margin-bottom:15px; border:1px solid #ccc;">
+                                    <thead style="background:#f1f5f9;"><tr><th>nome</th><th>cidade_principal</th><th>sub_cidades</th></tr></thead>
+                                    <tbody><tr><td>João Alves</td><td>São Paulo</td><td>Campinas, Jundiaí</td></tr></tbody>
+                                </table>
+                                
+                                <ul style="font-size:0.8rem; margin-bottom: 20px; color: #555; padding-left: 20px;">
+                                    <li><b>nome:</b> Completo ou crachá (Ex: João A.)</li>
+                                    <li><b>sub_cidades:</b> Preencha separando cada tag de cidade sempre acompanhando uma vírgula entre elas.</li>
+                                </ul>
+                            </div>
+                            <!-- Future Implementation Button. We might just give a template anyway -->
+                            <button class="btn btn-secondary" style="width:100%; border:1px solid var(--success); color:var(--success);" onclick="dlTemplateTecs()"><i class="fa-solid fa-download"></i> Baixar Template.xlsx</button>
+                        </div>
+
+                    </div>
+                </section>
+
+                <!-- VIEW: CONFIGURACOES -->
+                <section id="view-configuracoes" class="view-section">
+                    <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                        <div class="card" style="flex: 1; min-width: 300px;">
+                            <h2>Tipos de Serviço</h2>
+                            <p class="subtitle">Adicione tipos de serviço (ex: Instalação, Troca Preventiva)</p>
+                            
+                            <div class="form-group row-flex" style="margin-top: 20px;">
+                                <input type="text" id="novo-tipo-servico" placeholder="Novo tipo de serviço..." style="flex:1;">
+                                <button class="btn btn-primary" onclick="addTipoServico()">Adicionar</button>
+                            </div>
+                            
+                            <div class="badges-container" id="container-tipos-servico" style="margin-top: 20px;">
+                                <!-- Badges injected via JS -->
+                            </div>
+                        </div>
+
+                        <div class="card" style="flex: 1; min-width: 300px;">
+                            <h2>Modelos de Equipamento</h2>
+                            <p class="subtitle">Defina o portfólio de modelos operados (ex: SUNTECH 310U, GTK LITE 4G)</p>
+                            
+                            <div class="form-group row-flex" style="margin-top: 20px;">
+                                <input type="text" id="novo-modelo-equip" placeholder="Novo modelo..." style="flex:1;">
+                                <button class="btn btn-primary" onclick="addModeloEquip()">Adicionar</button>
+                            </div>
+                            
+                            <div class="badges-container" id="container-modelos-equip" style="margin-top: 20px;">
+                                <!-- Badges injected via JS -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- MODALS -->
+
+    <!-- Modal Novo Equipamento removed (migrated to internal tab) -->
+
+    <!-- Modal Novo Tecnico -->
+    <div class="modal-overlay" id="modal-add-tecnico">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Cadastrar Técnico</h3>
+                <button class="close-btn" onclick="closeModal('modal-add-tecnico')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Nome do Técnico</label>
+                    <input type="text" id="tec-nome">
+                </div>
+                <div class="form-group">
+                    <label>Cidade Principal</label>
+                    <input type="text" id="tec-cidade">
+                </div>
+                <div class="form-group">
+                    <label>Sub Cidades (separadas por vírgula)</label>
+                    <input type="text" id="tec-sub">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-add-tecnico')">Cancelar</button>
+                <button class="btn btn-primary" onclick="saveTecnico()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Novo Servico -->
+    <div class="modal-overlay" id="modal-add-servico">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Registrar Serviço (Instalação)</h3>
+                <button class="close-btn" onclick="closeModal('modal-add-servico')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Técnico Responsável</label>
+                    <select id="sel-tecnico" onchange="loadTecnicoInventory()"></select>
+                </div>
+                <div class="form-group">
+                    <label>Equipamento (Em Estoque do Técnico)</label>
+                    <select id="sel-equipamento"></select>
+                </div>
+                <div class="form-group">
+                    <label>Tipo de Serviço</label>
+                    <select id="sel-tipo-servico"></select>
+                </div>
+                <div class="form-group">
+                    <label>PLACA / Observações (Opcional)</label>
+                    <input type="text" id="sel-placa-obs" placeholder="Ex: ABC1234">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-add-servico')">Cancelar</button>
+                <button class="btn btn-primary" onclick="saveServico()">Registrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Preview Excel -->
+    <div class="modal-overlay" id="modal-preview-excel">
+        <div class="modal" style="width: 800px; max-width: 90vw;">
+            <div class="modal-header">
+                <h3>Preview da Planilha (Ação Requerida)</h3>
+                <button class="close-btn" onclick="cancelarUploadLote()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" style="max-height: 400px; overflow-y: auto;">
+                <p id="preview-msg" style="margin-bottom: 15px;"></p>
+                <table class="data-table">
+                    <thead><tr><th>Nº Interno</th><th>Modelo</th><th>Serial</th><th>Validação</th></tr></thead>
+                    <tbody id="tbody-preview"></tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cancelarUploadLote()">Cancelar</button>
+                <button class="btn btn-primary" id="btn-confirma-upload" onclick="confirmarUploadLote()" disabled>Confirmar Upload</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Ver Estoque Tecnico -->
+    <div class="modal-overlay" id="modal-ver-estoque">
+        <div class="modal" style="width: 700px; max-width: 90vw;">
+            <div class="modal-header">
+                <h3 id="modal-ver-estoque-title">Estoque do Técnico</h3>
+                <button class="close-btn" onclick="closeModal('modal-ver-estoque')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <div style="background:var(--bg-color); padding:15px; border-radius:5px; margin-bottom: 20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap: 10px;">
+                    <div>
+                        <p style="margin:0; font-size:0.9rem;"><strong>Cidade:</strong> <span id="modal-estoque-cidade">-</span></p>
+                        <p style="margin:8px 0 0 0; font-size:0.9rem;"><strong>Sub-cidades:</strong> <span id="modal-estoque-subs">-</span></p>
+                    </div>
+                    <button class="btn btn-primary" onclick="abrirNovoServicoParaTecnico()" id="btn-novo-srv-tec">
+                        <i class="fa-solid fa-plus"></i> Registrar Serviço
+                    </button>
+                </div>
+                <!-- table -->
+                <div style="max-height: 350px; overflow-y: auto;">
+                    <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Data Distribuição</th>
+                            <th>Nº Interno</th>
+                            <th>Serial</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody-estoque-tecnico">
+                        <!-- Populated via JS -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-ver-estoque')">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Ver Inventario/Relatorio Genérico -->
+    <div class="modal-overlay" id="modal-ver-relatorio">
+        <div class="modal" style="width: 1000px; max-width: 95vw;">
+            <div class="modal-header">
+                <h3 id="modal-relatorio-title">Resultados do Relatório</h3>
+                <button class="close-btn" onclick="closeModal('modal-ver-relatorio')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" style="max-height: 60vh; overflow-y: auto; padding: 0;">
+                <table class="data-table" id="table-relatorio-generic" style="font-size:0.85rem; width:100%;">
+                    <thead id="relatorio-generic-head"></thead>
+                    <tbody id="relatorio-generic-body"></tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-ver-relatorio')">Fechar Visualização</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

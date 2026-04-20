@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STOKI - Controle de Estoque de Ativos</title>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SweetAlert2 -->
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+    
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <link rel="stylesheet" href="styles.css">
+    <script src="js/supabase.js"></script>
+    <script src="js/auth.js"></script>
+</head>
+<body class="login-body">
+    
+    <!-- Dynamic background elements -->
+    <div class="bg-orb orb-1"></div>
+    <div class="bg-orb orb-2"></div>
+    <div class="bg-orb orb-3"></div>
+
+    <div class="login-container">
+        <div class="login-card glass-panel">
+            <div class="login-header">
+                <div class="brand">
+                    <i class="fa-solid fa-box-open brand-icon"></i>
+                    <h1>STOKI</h1>
+                </div>
+                <p class="subtitle">Controle de Estoque de Ativos</p>
+            </div>
+
+            <!-- Login Form -->
+            <div id="form-login-wrapper" class="auth-wrapper active">
+                <form id="form-login">
+                    <div class="input-group">
+                        <label for="login-email">E-mail</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fa-solid fa-envelope"></i>
+                            <input type="email" id="login-email" placeholder="admin@stoki.com" required>
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label for="login-pass">Senha</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fa-solid fa-lock"></i>
+                            <input type="password" id="login-pass" placeholder="••••••••" required>
+                        </div>
+                    </div>
+                    <div class="login-options">
+                        <a href="#" class="text-link" onclick="handleResetPassword()">Esqueci minha senha</a>
+                    </div>
+                    <button type="submit" id="login-btn" class="btn btn-primary btn-block btn-glow">Entrar</button>
+                    
+                    <div class="auth-switch">
+                        <p>Não tem uma conta? <a href="#" class="text-link" onclick="toggleAuthMode('register')">Criar conta</a></p>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Register Form -->
+            <div id="form-register-wrapper" class="auth-wrapper">
+                <form id="form-register">
+                    <div class="input-group">
+                        <label for="reg-email">E-mail</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fa-solid fa-envelope"></i>
+                            <input type="email" id="reg-email" placeholder="seu@email.com" required>
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label for="reg-pass">Senha</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fa-solid fa-lock"></i>
+                            <input type="password" id="reg-pass" placeholder="Mínimo 6 caracteres" required minlength="6">
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label for="reg-pass-confirm">Confirmar Senha</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fa-solid fa-check-double"></i>
+                            <input type="password" id="reg-pass-confirm" placeholder="••••••••" required minlength="6">
+                        </div>
+                    </div>
+                    <button type="submit" id="reg-btn" class="btn btn-primary btn-block btn-glow mt-4">Criar Conta</button>
+                    
+                    <div class="auth-switch">
+                        <p>Já tem uma conta? <a href="#" class="text-link" onclick="toggleAuthMode('login')">Fazer login</a></p>
+                    </div>
+                </form>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+</body>
+</html>
