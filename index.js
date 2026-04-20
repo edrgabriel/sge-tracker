@@ -4,6 +4,7 @@ const path = require('path');
 const supabase = require('./db');
 
 const app = express();
+// Force redeploy - Update sequence 2026-04-20
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 
