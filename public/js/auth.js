@@ -162,6 +162,9 @@ async function syncUserRole(token) {
             console.log('Cargo recebido do servidor:', data.role);
             localStorage.setItem('stoki_role', data.role);
             localStorage.setItem('stoki_email', data.email);
+            
+            // Dispatch event to notify app.js that auth is ready
+            window.dispatchEvent(new CustomEvent('stokiAuthReady', { detail: data }));
         } else {
             console.error('Falha na resposta do servidor /api/me:', res.status);
         }

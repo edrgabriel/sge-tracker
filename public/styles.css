@@ -296,14 +296,22 @@ body {
 .modal-overlay {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0,0,0,0.5);
+    background: rgba(0,0,0,0.6);
     display: none;
     align-items: center;
     justify-content: center;
-    z-index: 100;
+    z-index: 9999;
     backdrop-filter: blur(4px);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease;
 }
-.modal-overlay.active { display: flex !important; }
+.modal-overlay.active { 
+    display: flex !important; 
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: all !important;
+}
 
 .modal {
     background: white;

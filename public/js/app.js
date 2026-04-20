@@ -84,9 +84,20 @@ function loadViewData(view) {
 
 // === ON LOAD ===
 document.addEventListener('DOMContentLoaded', () => {
-    loadDashboard();
-    loadConfiguracoes();
-    applyPermissions();
+    // Escutar a sincronização do Auth (vindo do auth.js)
+    window.addEventListener('stokiAuthReady', () => {
+        console.log('Auth pronto capturado no app.js, aplicando permissões...');
+        loadDashboard();
+        loadConfiguracoes();
+        applyPermissions();
+    });
+
+    // Fallback caso já esteja no localStorage (evita delay se já temos os dados)
+    if (localStorage.getItem('stoki_role')) {
+        loadDashboard();
+        loadConfiguracoes();
+        applyPermissions();
+    }
 });
 
 // === MODAL HELPERS ===
