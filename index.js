@@ -93,7 +93,8 @@ app.get('/api/equipamentos', async (req, res) => {
             *, 
             tecnicos(nome),
             tecnicos_anterior:id_tecnico_anterior(nome)
-        `);
+        `)
+        .is('deleted_at', null);
         
     if (error) return res.status(500).json({ error: error.message });
     
@@ -177,7 +178,7 @@ app.put('/api/equipamentos/:id', restrictTo('master', 'gerente'), async (req, re
     const { num_interno, serial, modelo } = req.body;
 
     // Buscar dados antigos para o log
-    const { data: antigo } = await supabase.from('equipamentos').select('*').eq('id', id).single();
+    const { data: antigo } = await supabase.from('equipamentos').select('*').eq('id', id).is('deleted_at', null).single();
 
     const { data, error } = await supabase
         .from('equipamentos')
@@ -194,23 +195,35 @@ app.put('/api/equipamentos/:id', restrictTo('master', 'gerente'), async (req, re
     res.json({ success: true, data: data[0] });
 });
 
-// Delete Equipment
+// Delete Equipment -> Agora via RPC Transacional
 app.delete('/api/equipamentos/:id', restrictTo('master'), async (req, res) => {
     const { id } = req.params;
 
-    // Buscar dados antigos para o log
-    const { data: antigo } = await supabase.from('equipamentos').select('*').eq('id', id).single();
+    // Apenas checar se existe primeiro para fail-fast
+    const { data: antigo } = await supabase.from('equipamentos').select('id').eq('id', id).is('deleted_at', null).single();
+    if (!antigo) return res.status(404).json({ error: "Equipamento não encontrado ou já deletado." });
 
-    const { error } = await supabase
-        .from('equipamentos')
-        .delete()
-        .eq('id', id);
+    // Roda RPC Transacional de deleção e histórico atômico
+    const { error } = await supabase.rpc('soft_delete_equipamento', { req_id: parseInt(id), usr_email: req.user.email });
 
     if (error) return res.status(500).json({ error: error.message });
-    
-    logAudit(req.user.id, req.user.email, 'EXCLUIR', 'equipamentos', id, antigo, null);
+    res.json({ success: true, message: 'Equipamento perfeitamente enviado à lixeira.' });
+});
 
-    res.json({ success: true });
+// Restaurar Equipment -> Nova Rota RPC Transacional
+app.put('/api/equipamentos/:id/restaurar', restrictTo('master', 'gerente'), async (req, res) => {
+    const { id } = req.params;
+
+    const { error } = await supabase.rpc('restore_equipamento', { req_id: parseInt(id), usr_email: req.user.email });
+
+    if (error) {
+        if (error.message.includes('Já existe um equipamento ativo')) {
+            return res.status(400).json({ error: error.message });
+        }
+        return res.status(500).json({ error: error.message });
+    }
+    
+    res.json({ success: true, message: 'Equipamento Restaurado!' });
 });
 
 // Bulk assign to technician (Legacy for excel upload)
@@ -223,7 +236,8 @@ app.post('/api/equipamentos/assign', restrictTo('master', 'gerente', 'operador')
     const { data, error } = await supabase
         .from('equipamentos')
         .update({ status: 'Em Estoque Técnico', tecnico_id, data_distribuicao: today })
-        .in('id', ids);
+        .in('id', ids)
+        .is('deleted_at', null);
         
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true, changes: ids.length });
@@ -235,7 +249,7 @@ app.post('/api/equipamentos/move', restrictTo('master', 'gerente', 'operador'), 
     if (!ids || !ids.length) return res.status(400).json({ error: "Missing ids" });
 
     // Buscar dados antigos para o log
-    const { data: antigos } = await supabase.from('equipamentos').select('*').in('id', ids);
+    const { data: antigos } = await supabase.from('equipamentos').select('*').in('id', ids).is('deleted_at', null);
 
     let updatePayload = {};
     if (action === 'devolve') {
@@ -251,6 +265,7 @@ app.post('/api/equipamentos/move', restrictTo('master', 'gerente', 'operador'), 
         .from('equipamentos')
         .update(updatePayload)
         .in('id', ids)
+        .is('deleted_at', null)
         .select();
         
     if (error) return res.status(500).json({ error: error.message });
@@ -268,6 +283,7 @@ app.get('/api/distribuicoes', async (req, res) => {
         .select('num_interno, serial, data_distribuicao, tecnicos!inner(nome)')
         .eq('status', 'Em Estoque Técnico')
         .not('data_distribuicao', 'is', null)
+        .is('deleted_at', null)
         .order('data_distribuicao', { ascending: false })
         .limit(20);
         
@@ -292,7 +308,8 @@ app.get('/api/tecnicos', async (req, res) => {
         .from('equipamentos')
         .select('tecnico_id')
         .eq('status', 'Em Estoque Técnico')
-        .not('tecnico_id', 'is', null);
+        .not('tecnico_id', 'is', null)
+        .is('deleted_at', null);
         
     if (errEq) return res.status(500).json({ error: errEq.message });
     
@@ -512,7 +529,8 @@ app.post('/api/equipamentos/recolher', restrictTo('master', 'gerente', 'operador
         .from('equipamentos')
         .select('id, tecnico_id, serial')
         .eq('status', 'Instalado')
-        .in('serial', serials);
+        .in('serial', serials)
+        .is('deleted_at', null);
         
     if (errEq) return res.status(500).json({ error: errEq.message });
     if (!eqs || eqs.length === 0) return res.json({ success: true, changes: 0 });
@@ -573,7 +591,8 @@ app.post('/api/equipamentos/tratar', restrictTo('master', 'gerente'), async (req
             data_retorno: null,
             ultima_placa: null
         })
-        .in('id', ids);
+        .in('id', ids)
+        .is('deleted_at', null);
 
     if (updErr) return res.status(500).json({ error: updErr.message });
 
@@ -770,13 +789,13 @@ app.get('/api/stats', async (req, res) => {
             { data: techQs },
             { data: srvs }
         ] = await Promise.all([
-            supabase.from('equipamentos').select('id', { count: 'exact', head: true }),
-            supabase.from('equipamentos').select('id', { count: 'exact', head: true }).eq('status', 'Disponível'),
-            supabase.from('equipamentos').select('id', { count: 'exact', head: true }).eq('status', 'Em Estoque Técnico'),
-            supabase.from('equipamentos').select('id', { count: 'exact', head: true }).eq('status', 'Instalado'),
+            supabase.from('equipamentos').select('id', { count: 'exact', head: true }).is('deleted_at', null),
+            supabase.from('equipamentos').select('id', { count: 'exact', head: true }).eq('status', 'Disponível').is('deleted_at', null),
+            supabase.from('equipamentos').select('id', { count: 'exact', head: true }).eq('status', 'Em Estoque Técnico').is('deleted_at', null),
+            supabase.from('equipamentos').select('id', { count: 'exact', head: true }).eq('status', 'Instalado').is('deleted_at', null),
             
             // To get grouping equivalent: Fetch all Em Estoque and group in memory
-            supabase.from('equipamentos').select('tecnico_id, tecnicos(nome)').eq('status', 'Em Estoque Técnico').not('tecnico_id', 'is', null),
+            supabase.from('equipamentos').select('tecnico_id, tecnicos(nome)').eq('status', 'Em Estoque Técnico').not('tecnico_id', 'is', null).is('deleted_at', null),
             
             supabase.from('servicos').select('data, tipo_servico, equipamentos!inner(serial), tecnicos!inner(nome)').order('data', { ascending: false }).limit(10)
         ]);
@@ -820,7 +839,8 @@ app.get('/api/stats', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`STOKI Server running at http://localhost:${PORT}`);
+    console.log(`STOKI Server running at http://localhost:${PORT}`)
+        .is('deleted_at', null);
 });
 
 module.exports = app;
