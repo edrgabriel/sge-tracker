@@ -7,6 +7,14 @@ CREATE TABLE IF NOT EXISTS public.perfis (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Ativar RLS para permitir leitura mesmo sem Service Role Key (Fallback)
+ALTER TABLE public.perfis ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Usuários podem ler o próprio perfil" ON public.perfis;
+CREATE POLICY "Usuários podem ler o próprio perfil" 
+ON public.perfis FOR SELECT 
+USING (auth.uid() = id);
+
 -- 2. Tabela de Logs de Auditoria
 CREATE TABLE IF NOT EXISTS public.logs_auditoria (
     id SERIAL PRIMARY KEY,
@@ -19,6 +27,11 @@ CREATE TABLE IF NOT EXISTS public.logs_auditoria (
     dados_novos JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE public.logs_auditoria ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Logs acessíveis por Master e Gerente" ON public.logs_auditoria;
+-- Nota: RLS para logs é complexo sem service role, vamos permitir leitura pelo UID se necessário ou manter restrito.
+-- Para o dashboard funcionar via API, o ideal é o backend usar a Service Role Key.
 
 -- 3. Função para criar perfil automaticamente ao cadastrar novo usuário
 CREATE OR REPLACE FUNCTION public.handle_new_user()
