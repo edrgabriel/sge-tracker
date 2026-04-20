@@ -89,14 +89,19 @@ app.get('/api/me', (req, res) => {
 app.get('/api/equipamentos', async (req, res) => {
     const { data, error } = await supabase
         .from('equipamentos')
-        .select('*, tecnicos(nome)');
+        .select(`
+            *, 
+            tecnicos(nome),
+            tecnicos_anterior:id_tecnico_anterior(nome)
+        `);
         
     if (error) return res.status(500).json({ error: error.message });
     
-    // Map tecnicos(nome) to tecnico_nome to maintain API compatibility with frontend
+    // Map tecnicos(nome) to tecnico_nome to maintain API compatibility
     const rows = data.map(eq => ({
         ...eq,
-        tecnico_nome: eq.tecnicos ? eq.tecnicos.nome : null
+        tecnico_nome: eq.tecnicos ? eq.tecnicos.nome : null,
+        tecnico_anterior_nome: eq.tecnicos_anterior ? eq.tecnicos_anterior.nome : null
     }));
     
     res.json(rows);
@@ -522,10 +527,11 @@ app.post('/api/equipamentos/recolher', async (req, res) => {
         .from('equipamentos')
         .update({ 
             status: 'Pendente', 
+            id_tecnico_anterior: eqs[0].tecnico_id, // Usamos o primeiro como referência pro bulk simples
             tecnico_id: null, 
             data_distribuicao: null,
             data_retorno: today,
-            ultima_placa: serialMap[serials[0]] || '-' // Note: ideally we update individually if plates differ
+            ultima_placa: serialMap[serials[0]] || '-' 
         })
         .in('id', eqIds);
         
@@ -594,12 +600,50 @@ app.get('/api/equipamentos/:id/historico', async (req, res) => {
 
     if (error) return res.status(500).json({ error: error.message });
     
-    const rows = data.map(h => ({
-        ...h,
-        tecnico_nome: h.tecnicos ? h.tecnicos.nome : 'N/A'
-    }));
-    
     res.json(rows);
+});
+
+// -- Relatórios --
+app.get('/api/relatorios/devolucoes', async (req, res) => {
+    try {
+        // Buscar todas as devoluções do histórico
+        const { data: history, error } = await supabase
+            .from('historico_movimentacoes')
+            .select('equipamento_id, tipo, data, placa, tecnico_id, tecnicos(nome), equipamentos(num_interno, serial, modelo)')
+            .eq('tipo', 'DEVOLUCAO');
+
+        if (error) throw error;
+
+        // Agrupar por equipamento
+        const stats = {};
+        history.forEach(log => {
+            const eqId = log.equipamento_id;
+            if (!stats[eqId]) {
+                stats[eqId] = {
+                    equipamento_id: eqId,
+                    num_interno: log.equipamentos.num_interno,
+                    serial: log.equipamentos.serial,
+                    modelo: log.equipamentos.modelo,
+                    qtd_devolucoes: 0,
+                    ultima_devolucao: null,
+                    ultimo_tecnico: null,
+                    ultima_placa: null
+                };
+            }
+            stats[eqId].qtd_devolucoes++;
+            
+            // Manter o registro mais recente
+            if (!stats[eqId].ultima_devolucao || new Date(log.data) > new Date(stats[eqId].ultima_devolucao)) {
+                stats[eqId].ultima_devolucao = log.data;
+                stats[eqId].ultimo_tecnico = log.tecnicos ? log.tecnicos.nome : 'N/A';
+                stats[eqId].ultima_placa = log.placa || '-';
+            }
+        });
+
+        res.json(Object.values(stats));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // -- Configuracoes --

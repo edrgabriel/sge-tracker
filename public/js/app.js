@@ -290,13 +290,13 @@ function filterEquipamentos() {
         if (bulkActions) bulkActions.style.display = pendingList.length > 0 ? 'block' : 'none';
 
         pendingList.forEach(eq => {
-            const rDate = eq.data_retorno ? new Date(eq.data_retorno).toLocaleDateString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : '-';
+            const rDate = eq.data_retorno ? new Date(eq.data_retorno).toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '-';
             tbodyDev.innerHTML += `
                 <tr>
                     <td><input type="checkbox" class="check-devolvido" value="${eq.id}"></td>
                     <td><strong>${eq.num_interno}</strong></td>
                     <td>${eq.serial}</td>
-                    <td>${eq.modelo || '-'}</td>
+                    <td><span style="color:var(--primary); font-weight:500;">${eq.tecnico_anterior_nome || '-'}</span></td>
                     <td><span style="font-family:monospace; background:#eee; padding:2px 5px; border-radius:3px;">${eq.ultima_placa || '-'}</span></td>
                     <td>${rDate}</td>
                     <td>
@@ -1688,4 +1688,129 @@ function viewLogDetail(log) {
         `,
         width: '600px'
     });
+}
+// === RELATÓRIOS E ANALYTICS ===
+let allRelatorioData = [];
+let chartInstance = null;
+
+async function loadRelatorios() {
+    try {
+        const res = await apiFetch(`${API_URL}/relatorios/devolucoes`);
+        const data = await res.json();
+        allRelatorioData = data;
+
+        // Preencher counters
+        const totalDev = data.reduce((acc, curr) => acc + curr.qtd_devolucoes, 0);
+        const recurrentCount = data.filter(i => i.qtd_devolucoes > 1).length;
+
+        document.getElementById('rep-total-devolucoes').innerText = totalDev;
+        document.getElementById('rep-itens-recorrentes').innerText = recurrentCount;
+
+        // Popular Select de Técnicos para filtro
+        const selTech = document.getElementById('filter-rep-tecnico');
+        const techs = [...new Set(data.map(i => i.ultimo_tecnico).filter(t => t !== 'N/A'))].sort();
+        selTech.innerHTML = '<option value="">Todos os Técnicos</option>';
+        techs.forEach(t => selTech.innerHTML += `<option value="${t}">${t}</option>`);
+
+        renderRelatorioTable(data);
+        renderRelatorioChart(data);
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function renderRelatorioTable(data) {
+    const tbody = document.getElementById('tbody-relatorio-devolucoes');
+    tbody.innerHTML = '';
+
+    data.sort((a, b) => b.qtd_devolucoes - a.qtd_devolucoes).forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><strong>${row.num_interno}</strong></td>
+            <td>${row.serial}</td>
+            <td>${row.modelo || '-'}</td>
+            <td>
+                <span class="badge ${row.qtd_devolucoes > 1 ? 'badge-danger' : 'badge-info'}" style="font-size:0.9rem;">
+                    ${row.qtd_devolucoes}x
+                </span>
+            </td>
+            <td>${row.ultimo_tecnico}</td>
+            <td><span style="font-family:monospace; background:#eee; padding:2px 5px; border-radius:3px;">${row.ultima_placa}</span></td>
+            <td>
+                <button class="btn btn-secondary btn-sm" onclick="verHistorico('${row.equipamento_id}')">
+                    <i class="fa-solid fa-clock-rotate-left"></i> Ver Ciclo
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function filterRelatorioDev() {
+    const tech = document.getElementById('filter-rep-tecnico').value.toLowerCase();
+    const search = document.getElementById('filter-rep-search').value.toLowerCase();
+
+    const filtered = allRelatorioData.filter(i => {
+        const matchTech = !tech || (i.ultimo_tecnico || '').toLowerCase() === tech;
+        const matchSearch = !search || 
+            (i.serial || '').toLowerCase().includes(search) || 
+            (i.num_interno || '').toLowerCase().includes(search);
+        return matchTech && matchSearch;
+    });
+
+    renderRelatorioTable(filtered);
+}
+
+function renderRelatorioChart(data) {
+    const ctx = document.getElementById('chart-devolucoes').getContext('2d');
+    
+    // Pegar top 5 mais devolvidos
+    const topData = [...data]
+        .sort((a, b) => b.qtd_devolucoes - a.qtd_devolucoes)
+        .slice(0, 5);
+
+    if (chartInstance) chartInstance.destroy();
+
+    chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: topData.map(i => i.num_interno || i.serial),
+            datasets: [{
+                label: 'Quantidade de Devoluções',
+                data: topData.map(i => i.qtd_devolucoes),
+                backgroundColor: 'rgba(245, 158, 11, 0.7)',
+                borderColor: 'rgba(245, 158, 11, 1)',
+                borderWidth: 1,
+                borderRadius: 5
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { beginAtZero: true, ticks: { stepSize: 1 } }
+            },
+            plugins: {
+                legend: { display: false }
+            }
+        }
+    });
+}
+
+function exportRelatorioExcel() {
+    const data = allRelatorioData.map(i => ({
+        "Nº Interno": i.num_interno,
+        "Serial": i.serial,
+        "Modelo": i.modelo,
+        "Qtd Devoluções": i.qtd_devolucoes,
+        "Último Técnico": i.ultimo_tecnico,
+        "Última Placa": i.ultima_placa,
+        "Última Devolução": new Date(i.ultima_devolucao).toLocaleDateString()
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "RelatorioDevolucoes");
+    XLSX.writeFile(workbook, `Relatorio_Devolucoes_${new Date().toISOString().split('T')[0]}.xlsx`);
 }
