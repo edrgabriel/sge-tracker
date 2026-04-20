@@ -175,7 +175,8 @@ app.post('/api/equipamentos/bulk', restrictTo('master', 'gerente'), async (req, 
 // Update Equipment
 app.put('/api/equipamentos/:id', restrictTo('master', 'gerente'), async (req, res) => {
     const { id } = req.params;
-    const { num_interno, serial, modelo } = req.body;
+    const { num_interno, serial, modelo, status } = req.body;
+    if (status === 'Disponível') return res.status(403).json({ error: "Bypass Bloqueado: Transição para Disponível deve ocorrer via Tratamento." });
 
     // Buscar dados antigos para o log
     const { data: antigo } = await supabase.from('equipamentos').select('*').eq('id', id).is('deleted_at', null).single();
@@ -253,7 +254,11 @@ app.post('/api/equipamentos/move', restrictTo('master', 'gerente', 'operador'), 
 
     let updatePayload = {};
     if (action === 'devolve') {
-        updatePayload = { status: 'Disponível', tecnico_id: null, data_distribuicao: null };
+        for (const eq_id of ids) {
+             const {error} = await supabase.rpc('fluxo_registrar_devolucao', { req_id: parseInt(eq_id), usr_email: req.user.email, placa_info: null, origem_info: 'movimentacao_manual' });
+             if (error) return res.status(500).json({ error: error.message });
+        }
+        return res.json({ success: true, changes: ids.length });
     } else if (action === 'assign' || action === 'transfer') {
         if (!tecnico_id) return res.status(400).json({ error: "Missing Target Technician ID" });
         updatePayload = { status: 'Em Estoque Técnico', tecnico_id, data_distribuicao: new Date().toISOString() };
@@ -418,10 +423,20 @@ app.post('/api/servicos', restrictTo('master', 'gerente', 'operador'), async (re
     const srvData = clientData || new Date().toISOString();
     
     // Sequential update simulating basic transaction
-    const { error: patchError } = await supabase
-        .from('equipamentos')
-        .update({ status: 'Instalado' })
-        .eq('id', equipamento_id);
+    const isRemove = !tipo_servico.toLowerCase().includes('instalaç');
+    let patchError;
+    if (isRemove) {
+        const { error } = await supabase.rpc('fluxo_registrar_devolucao', { 
+            req_id: parseInt(equipamento_id), 
+            usr_email: req.user.email, 
+            placa_info: placa_obs || null, 
+            origem_info: 'servico_operacional' 
+        });
+        patchError = error;
+    } else {
+        const { error } = await supabase.from('equipamentos').update({ status: 'Instalado' }).eq('id', equipamento_id);
+        patchError = error;
+    }
         
     if (patchError) return res.status(500).json({ error: patchError.message });
     
@@ -429,11 +444,7 @@ app.post('/api/servicos', restrictTo('master', 'gerente', 'operador'), async (re
         .from('servicos')
         .insert([{ equipamento_id, tecnico_id, tipo_servico, data: srvData, placa_obs: placa_obs || '' }]);
         
-    if (insError) {
-        // Rollback
-        await supabase.from('equipamentos').update({ status: 'Disponível' }).eq('id', equipamento_id);
-        return res.status(500).json({ error: insError.message });
-    }
+    if (insError) return res.status(500).json({ error: insError.message });
 
     // Registrar no Histórico de Movimentações
     await supabase.from('historico_movimentacoes').insert([{
@@ -480,81 +491,17 @@ app.post('/api/servicos/bulk', restrictTo('master', 'gerente', 'operador'), asyn
     
     const eqIds = validSrv.map(s => s.equipamento_id);
     
-    const { error: updErr } = await supabase
-        .from('equipamentos')
-        .update({ status: 'Instalado' })
-        .in('id', eqIds);
-        
-    if (updErr) return res.status(500).json({ error: updErr.message });
-    
-    const { error: insErr } = await supabase
-        .from('servicos')
-        .insert(validSrv);
-        
-    if (insErr) {
-        // Rollback
-        await supabase.from('equipamentos').update({ status: 'Em Estoque Técnico' }).in('id', eqIds);
-        return res.status(500).json({ error: insErr.message });
+    for (const eq of eqs) {
+         const { error } = await supabase.rpc('fluxo_registrar_devolucao', {
+             req_id: parseInt(eq.id),
+             usr_email: req.user.email,
+             placa_info: serialMap[eq.serial] || null,
+             origem_info: 'recolhimento_em_massa'
+         });
+         if (error) return res.status(500).json({ error: error.message });
     }
-
-    // Registrar no Histórico em Lote
-    const histServ = validSrv.map(s => ({
-        equipamento_id: s.equipamento_id,
-        tecnico_id: s.tecnico_id,
-        tipo: 'INSTALACAO',
-        placa: s.placa_obs || '',
-        user_email: req.user.email,
-        observacao: `Instalação em Lote: ${s.tipo_servico}`
-    }));
-    await supabase.from('historico_movimentacoes').insert(histServ);
     
-    res.json({ success: true, count: validSrv.length });
-});
-
-// Recolher equipamentos instalados de volta para base
-app.post('/api/equipamentos/recolher', restrictTo('master', 'gerente', 'operador'), async (req, res) => {
-    const payloads = req.body; // array of { serial, placa_obs } or strings
-    if (!payloads || !payloads.length) return res.status(400).json({ error: "Missing data" });
-
-    const paramsArray = payloads.map(p => {
-        if (typeof p === 'string') return { serial: p, placa_obs: '' };
-        return { serial: p.serial, placa_obs: p.placa_obs || p.placa || p.obs || '' };
-    }).filter(x => x.serial);
-
-    if (paramsArray.length === 0) return res.json({ success: true, changes: 0 });
-
-    const serials = paramsArray.map(p => p.serial);
-
-    const { data: eqs, error: errEq } = await supabase
-        .from('equipamentos')
-        .select('id, tecnico_id, serial')
-        .eq('status', 'Instalado')
-        .in('serial', serials)
-        .is('deleted_at', null);
-        
-    if (errEq) return res.status(500).json({ error: errEq.message });
-    if (!eqs || eqs.length === 0) return res.json({ success: true, changes: 0 });
-
-    const serialMap = {};
-    paramsArray.forEach(p => serialMap[p.serial] = p.placa_obs);
-
-    const today = new Date().toISOString();
-    const eqIds = eqs.map(e => e.id);
-    
-    const { error: updErr } = await supabase
-        .from('equipamentos')
-        .update({ 
-            status: 'Pendente', 
-            id_tecnico_anterior: eqs[0].tecnico_id, // Usamos o primeiro como referência pro bulk simples
-            tecnico_id: null, 
-            data_distribuicao: null,
-            data_retorno: today,
-            ultima_placa: serialMap[serials[0]] || '-' 
-        })
-        .in('id', eqIds);
-        
-    if (updErr) return res.status(500).json({ error: updErr.message });
-    
+    // Insere logs do servico
     const srvPayloads = eqs.map(eq => ({
         equipamento_id: eq.id,
         tecnico_id: eq.tecnico_id,
@@ -562,19 +509,7 @@ app.post('/api/equipamentos/recolher', restrictTo('master', 'gerente', 'operador
         data: today,
         placa_obs: serialMap[eq.serial] || '-'
     }));
-
     await supabase.from('servicos').insert(srvPayloads);
-
-    // Registrar no Histórico de Movimentações
-    const histRecolher = eqs.map(eq => ({
-        equipamento_id: eq.id,
-        tecnico_id: eq.tecnico_id,
-        tipo: 'DEVOLUCAO',
-        placa: serialMap[eq.serial] || '-',
-        user_email: req.user.email,
-        observacao: 'Recolhido para tratamento/manutenção'
-    }));
-    await supabase.from('historico_movimentacoes').insert(histRecolher);
     
     res.json({ success: true, changes: eqs.length });
 });
@@ -584,26 +519,10 @@ app.post('/api/equipamentos/tratar', restrictTo('master', 'gerente'), async (req
     const { ids } = req.body; // Array de IDs
     if (!ids || !ids.length) return res.status(400).json({ error: "IDs não fornecidos" });
 
-    const { error: updErr } = await supabase
-        .from('equipamentos')
-        .update({ 
-            status: 'Disponível',
-            data_retorno: null,
-            ultima_placa: null
-        })
-        .in('id', ids)
-        .is('deleted_at', null);
-
-    if (updErr) return res.status(500).json({ error: updErr.message });
-
-    // Registrar no Histórico
-    const histTratar = ids.map(id => ({
-        equipamento_id: id,
-        tipo: 'TRATAMENTO',
-        user_email: req.user.email,
-        observacao: 'Tratamento concluído. Retornado ao estoque disponível.'
-    }));
-    await supabase.from('historico_movimentacoes').insert(histTratar);
+    for (const idi of ids) {
+        const { error } = await supabase.rpc('fluxo_finalizar_tratamento', { req_id: parseInt(idi), usr_email: req.user.email });
+        if(error) return res.status(403).json({ error: error.message });
+    }
 
     res.json({ success: true, message: `Equipamentos tratados: ${ids.length}` });
 });
