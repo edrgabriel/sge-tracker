@@ -247,9 +247,7 @@ function filterEquipamentos() {
         filteredLista.forEach(eq => {
             const canEdit = hasPermission('edit');
             const canDelete = hasPermission('delete');
-            let statusClass = 'disponivel';
-            if (eq.status === 'Em Estoque Técnico') statusClass = 'estoque';
-            if (eq.status === 'Instalado') statusClass = 'instalado';
+            let statusClass = getStatusClass(eq.status);
             let dDate = eq.data_distribuicao ? new Date(eq.data_distribuicao).toLocaleDateString('pt-BR') : '-';
 
             tbody.innerHTML += `
@@ -485,19 +483,35 @@ async function bulkTratarEquipamentos() {
 async function verHistorico(id) {
     try {
         const res = await apiFetch(`${API_URL}/equipamentos/${id}/historico`);
+        if (!res.ok) throw new Error('Falha ao buscar histórico');
         const history = await res.json();
-        const eq = allEquipamentos.find(e => e.id == id);
+        
+        let eq = allEquipamentos.find(e => e.id == id);
+        
+        // Se o equipamento não estiver na lista global (ex: vindo de relatórios), tentamos extrair o básico do histórico
+        let num_interno = eq?.num_interno || '-';
+        let serial = eq?.serial || '-';
+        let modelo = eq?.modelo || '-';
+        let status = eq?.status || 'Não identificado';
+
+        if (!eq && history.length > 0) {
+            // Tentar pegar do registro do histórico (num_interno/serial/modelo podem estar nos joins se index.js retornasse)
+            // Como index.js /historico retorna apenas log + tecnicos(nome), vamos usar o que temos.
+            // Para ser 100%, o ideal seria index.js no /historico também trazer dados do equipamento se ele existir.
+        }
 
         // Header do Modal
         const headerInfo = document.getElementById('hist-tracker-info');
-        headerInfo.innerHTML = `
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-                <div><strong>Nº Interno:</strong> ${eq?.num_interno || '-'}</div>
-                <div><strong>Serial:</strong> ${eq?.serial || '-'}</div>
-                <div><strong>Modelo:</strong> ${eq?.modelo || '-'}</div>
-                <div><strong>Status Atual:</strong> <span class="status-badge">${eq?.status || '-'}</span></div>
-            </div>
-        `;
+        if(headerInfo) {
+            headerInfo.innerHTML = `
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <div><strong>Nº Interno:</strong> ${num_interno}</div>
+                    <div><strong>Serial:</strong> ${serial}</div>
+                    <div><strong>Modelo:</strong> ${modelo}</div>
+                    <div><strong>Status Atual:</strong> <span class="status-badge ${getStatusClass(status)}">${status}</span></div>
+                </div>
+            `;
+        }
 
         // Timeline
         const timeline = document.getElementById('timeline-movimentacao');
@@ -1754,6 +1768,7 @@ function renderRelatorioTable(data) {
                     ${row.qtd_devolucoes}x
                 </span>
             </td>
+            <td><span class="badge ${getStatusClass(row.status_atual)}">${row.status_atual}</span></td>
             <td>${row.ultimo_tecnico}</td>
             <td><span style="font-family:monospace; background:#eee; padding:2px 5px; border-radius:3px;">${row.ultima_placa}</span></td>
             <td>
@@ -1826,6 +1841,7 @@ function exportRelatorioExcel() {
         "Serial": i.serial,
         "Modelo": i.modelo,
         "Qtd Devoluções": i.qtd_devolucoes,
+        "Status Atual": i.status_atual,
         "Último Técnico": i.ultimo_tecnico,
         "Última Placa": i.ultima_placa,
         "Última Devolução": new Date(i.ultima_devolucao).toLocaleDateString()
@@ -1835,4 +1851,15 @@ function exportRelatorioExcel() {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "RelatorioDevolucoes");
     XLSX.writeFile(workbook, `Relatorio_Devolucoes_${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
+function getStatusClass(status) {
+    if (!status) return '';
+    const s = status.toLowerCase();
+    if (s.includes('disponível')) return 'disponivel';
+    if (s.includes('estoque')) return 'estoque';
+    if (s.includes('instalado')) return 'instalado';
+    if (s.includes('pendente')) return 'pendente';
+    if (s.includes('distribuído')) return 'estoque';
+    return '';
 }

@@ -618,12 +618,17 @@ app.get('/api/relatorios/devolucoes', async (req, res) => {
         const stats = {};
         history.forEach(log => {
             const eqId = log.equipamento_id;
+            
+            // Se o equipamento não existe mais (foi deletado), ignoramos no relatório gerencial
+            if (!log.equipamentos) return;
+
             if (!stats[eqId]) {
                 stats[eqId] = {
                     equipamento_id: eqId,
                     num_interno: log.equipamentos.num_interno,
                     serial: log.equipamentos.serial,
                     modelo: log.equipamentos.modelo,
+                    status_atual: log.equipamentos.status, // Adicionado status
                     qtd_devolucoes: 0,
                     ultima_devolucao: null,
                     ultimo_tecnico: null,
