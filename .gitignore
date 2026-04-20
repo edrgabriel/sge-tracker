@@ -1,0 +1,5 @@
+node_modules
+stoki.db
+.env
+.vercel
+public.zip
