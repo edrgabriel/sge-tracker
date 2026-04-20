@@ -152,14 +152,18 @@ async function handleResetPassword() {
 }
 
 async function syncUserRole(token) {
+    console.log('Iniciando sincronização de cargo...');
     try {
         const res = await fetch('/api/me', {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         if (res.ok) {
             const data = await res.json();
+            console.log('Cargo recebido do servidor:', data.role);
             localStorage.setItem('stoki_role', data.role);
             localStorage.setItem('stoki_email', data.email);
+        } else {
+            console.error('Falha na resposta do servidor /api/me:', res.status);
         }
     } catch (e) {
         console.error('Erro ao sincronizar papel do usuário:', e);

@@ -35,9 +35,14 @@ async function authenticateUser(req, res, next) {
         .eq('id', user.id)
         .single();
 
-    // Se não encontrar perfil, assume 'visualizador' em vez de travar com 403
-    // Isso permite que o syncUserRole do frontend funcione e mostre o estado correto
+    if (perfilError) {
+        console.error(`Erro ao buscar perfil para user ${user.id}:`, perfilError.message);
+    }
+
+    // Se não encontrar perfil, assume 'visualizador'
     const role = (perfil && !perfilError) ? perfil.role : 'visualizador';
+    
+    console.log(`Usuário autenticado: ${user.email} | Cargo: ${role}`);
 
     req.user = { ...user, role };
     next();
