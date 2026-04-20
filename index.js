@@ -49,6 +49,7 @@ app.post('/api/equipamentos', async (req, res) => {
         .select();
         
     if (error) return res.status(500).json({ error: error.message });
+
     if (!data || data.length === 0) return res.json({ success: true, message: "Equipamento adicionado (sem retorno de ID)" });
     res.json({ success: true, id: data[0].id });
 });
@@ -190,11 +191,10 @@ app.post('/api/tecnicos', async (req, res) => {
         .select();
         
     if (error) return res.status(500).json({ error: error.message });
+
     if (!data || data.length === 0) return res.json({ success: true, message: "Técnico adicionado (sem retorno de ID)" });
     res.json({ success: true, id: data[0].id });
 });
-
-// -- Servicos --
 app.get('/api/servicos', async (req, res) => {
     const { data, error } = await supabase
         .from('servicos')
