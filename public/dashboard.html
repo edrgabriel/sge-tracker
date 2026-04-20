@@ -54,6 +54,12 @@
                 <a href="#" class="nav-item" data-target="templates">
                     <i class="fa-solid fa-file-csv"></i> Modelos Excel
                 </a>
+                <a href="#" class="nav-item" data-target="usuarios" id="nav-usuarios" style="display:none;">
+                    <i class="fa-solid fa-user-shield"></i> Usuários
+                </a>
+                <a href="#" class="nav-item" data-target="logs" id="nav-logs" style="display:none;">
+                    <i class="fa-solid fa-list-check"></i> Logs do Sistema
+                </a>
             </nav>
             <div class="sidebar-footer">
                 <p>v1.0.0 &copy; 2026</p>
@@ -66,7 +72,10 @@
                 <h1 id="page-title">Dashboard</h1>
                 <div class="user-profile">
                     <div class="avatar"><i class="fa-solid fa-user"></i></div>
-                    <span>Admin</span>
+                    <div style="display:flex; flex-direction:column;">
+                        <span id="user-display-email" style="font-weight:600; font-size:0.9rem;">Carregando...</span>
+                        <span id="user-display-role" style="font-size:0.75rem; color:var(--text-secondary); text-transform:uppercase;">-</span>
+                    </div>
                     <button onclick="handleLogout()" class="btn btn-secondary" style="margin-left: 15px; padding: 6px 12px; font-size: 0.85rem; border: 1px solid var(--border-color); cursor:pointer;">
                         <i class="fa-solid fa-right-from-bracket" style="color:var(--danger)"></i> Sair
                     </button>
@@ -589,6 +598,57 @@
                     </div>
                 </section>
 
+                <!-- VIEW: USUÁRIOS (MASTER ONLY) -->
+                <section id="view-usuarios" class="view-section">
+                    <div class="header-actions">
+                        <h2>Gerenciamento de Usuários</h2>
+                        <button class="btn btn-primary" id="btn-add-user" onclick="openModal('modal-add-usuario')">
+                            <i class="fa-solid fa-user-plus"></i> Novo Usuário
+                        </button>
+                    </div>
+                    <div class="card table-card">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>E-mail</th>
+                                    <th>Papel (Role)</th>
+                                    <th>Criado em</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-usuarios">
+                                <!-- Populated via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- VIEW: LOGS (MASTER/GERENTE) -->
+                <section id="view-logs" class="view-section">
+                    <div class="header-actions">
+                        <h2>Logs de Auditoria</h2>
+                    </div>
+                    <div class="card table-card">
+                        <div style="max-height: 500px; overflow-y: auto;">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Data</th>
+                                        <th>Usuário</th>
+                                        <th>Ação</th>
+                                        <th>Tabela</th>
+                                        <th>ID Item</th>
+                                        <th>Detalhes</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-logs">
+                                    <!-- Populated via JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
             </div>
         </main>
     </div>
@@ -791,6 +851,39 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('modal-ver-relatorio')">Fechar Visualização</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Novo Usuário -->
+    <div class="modal-overlay" id="modal-add-usuario">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Cadastrar Novo Usuário</h3>
+                <button class="close-btn" onclick="closeModal('modal-add-usuario')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>E-mail do Usuário</label>
+                    <input type="email" id="user-email" placeholder="usuario@email.com">
+                </div>
+                <div class="form-group">
+                    <label>Senha Provisória</label>
+                    <input type="password" id="user-pass" placeholder="••••••••">
+                </div>
+                <div class="form-group">
+                    <label>Papel / Cargo</label>
+                    <select id="user-role">
+                        <option value="visualizador">Visualizador (Apenas Leitura)</option>
+                        <option value="operador">Operador (Estoque e Serviços)</option>
+                        <option value="gerente">Gerente / Supervisor</option>
+                        <option value="master">Administrador (Master)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-add-usuario')">Cancelar</button>
+                <button class="btn btn-primary" onclick="saveUsuario()">Criar Usuário</button>
             </div>
         </div>
     </div>

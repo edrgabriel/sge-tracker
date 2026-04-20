@@ -16,7 +16,67 @@ app.use(express.static(publicPath));
 app.get('/', (req, res) => res.sendFile(path.join(publicPath, 'index.html')));
 app.get('/dashboard.html', (req, res) => res.sendFile(path.join(publicPath, 'dashboard.html')));
 
+// ==== MIDDLEWARES & HELPERS ====
+
+// Middleware de Autenticação
+async function authenticateUser(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'Token não fornecido' });
+
+    const token = authHeader.split(' ')[1];
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+
+    if (error || !user) return res.status(401).json({ error: 'Token inválido ou expirado' });
+
+    // Buscar perfil do usuário para pegar o Role
+    const { data: perfil, error: perfilError } = await supabase
+        .from('perfis')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+    if (perfilError || !perfil) return res.status(403).json({ error: 'Perfil não encontrado' });
+
+    req.user = { ...user, role: perfil.role };
+    next();
+}
+
+// Middleware para restringir por Role
+function restrictTo(...roles) {
+    return (req, res, next) => {
+        if (!roles.includes(req.user.role)) {
+            return res.status(403).json({ error: 'Você não tem permissão para realizar esta ação' });
+        }
+        next();
+    };
+}
+
+// Função para log de auditoria
+async function logAudit(userId, email, acao, tabela, itemId, antigo, novo) {
+    try {
+        await supabase.from('logs_auditoria').insert([{
+            user_id: userId,
+            user_email: email,
+            acao,
+            tabela_alvo: tabela,
+            item_id: String(itemId),
+            dados_antigos: antigo,
+            dados_novos: novo
+        }]);
+    } catch (err) {
+        console.error('Erro ao gravar log de auditoria:', err);
+    }
+}
+
 // ==== API ROUTES ====
+
+// Aplicar autenticação em todas as rotas de API
+app.use('/api', authenticateUser);
+
+// Rota de Perfil (Utilitário para o Frontend)
+app.get('/api/me', (req, res) => {
+    res.json({ email: req.user.email, role: req.user.role });
+});
 
 // -- Equipamentos --
 app.get('/api/equipamentos', async (req, res) => {
@@ -35,7 +95,7 @@ app.get('/api/equipamentos', async (req, res) => {
     res.json(rows);
 });
 
-app.post('/api/equipamentos', async (req, res) => {
+app.post('/api/equipamentos', restrictTo('master', 'gerente', 'operador'), async (req, res) => {
     const { num_interno, serial, status, tecnico_id, modelo } = req.body;
     
     const { data, error } = await supabase
@@ -51,11 +111,15 @@ app.post('/api/equipamentos', async (req, res) => {
         
     if (error) return res.status(500).json({ error: error.message });
 
+    if (data && data.length > 0) {
+        logAudit(req.user.id, req.user.email, 'CADASTRAR', 'equipamentos', data[0].id, null, data[0]);
+    }
+
     if (!data || data.length === 0) return res.json({ success: true, message: "Equipamento adicionado (sem retorno de ID)" });
     res.json({ success: true, id: data[0].id });
 });
 
-app.post('/api/equipamentos/bulk', async (req, res) => {
+app.post('/api/equipamentos/bulk', restrictTo('master', 'gerente'), async (req, res) => {
     const equipamentos = req.body; 
     
     const payloads = equipamentos.map(eq => ({
@@ -67,16 +131,24 @@ app.post('/api/equipamentos/bulk', async (req, res) => {
     
     const { data, error } = await supabase
         .from('equipamentos')
-        .upsert(payloads, { onConflict: 'num_interno', ignoreDuplicates: false });
+        .upsert(payloads, { onConflict: 'num_interno', ignoreDuplicates: false })
+        .select();
         
     if (error) return res.status(500).json({ error: error.message });
+    
+    logAudit(req.user.id, req.user.email, 'CADASTRAR_LOTE', 'equipamentos', 'múltiplos', null, { count: equipamentos.length });
+    
     res.json({ success: true, count: equipamentos.length });
 });
 
 // Update Equipment
-app.put('/api/equipamentos/:id', async (req, res) => {
+app.put('/api/equipamentos/:id', restrictTo('master', 'gerente'), async (req, res) => {
     const { id } = req.params;
     const { num_interno, serial, modelo } = req.body;
+
+    // Buscar dados antigos para o log
+    const { data: antigo } = await supabase.from('equipamentos').select('*').eq('id', id).single();
+
     const { data, error } = await supabase
         .from('equipamentos')
         .update({ num_interno, serial, modelo })
@@ -84,18 +156,30 @@ app.put('/api/equipamentos/:id', async (req, res) => {
         .select();
 
     if (error) return res.status(500).json({ error: error.message });
+    
+    if (data && data.length > 0) {
+        logAudit(req.user.id, req.user.email, 'EDITAR', 'equipamentos', id, antigo, data[0]);
+    }
+
     res.json({ success: true, data: data[0] });
 });
 
 // Delete Equipment
-app.delete('/api/equipamentos/:id', async (req, res) => {
+app.delete('/api/equipamentos/:id', restrictTo('master'), async (req, res) => {
     const { id } = req.params;
+
+    // Buscar dados antigos para o log
+    const { data: antigo } = await supabase.from('equipamentos').select('*').eq('id', id).single();
+
     const { error } = await supabase
         .from('equipamentos')
         .delete()
         .eq('id', id);
 
     if (error) return res.status(500).json({ error: error.message });
+    
+    logAudit(req.user.id, req.user.email, 'EXCLUIR', 'equipamentos', id, antigo, null);
+
     res.json({ success: true });
 });
 
@@ -116,9 +200,12 @@ app.post('/api/equipamentos/assign', async (req, res) => {
 });
 
 // Dynamic Movement for Individual Assignment (Assign, Transfer, Devolve)
-app.post('/api/equipamentos/move', async (req, res) => {
+app.post('/api/equipamentos/move', restrictTo('master', 'gerente', 'operador'), async (req, res) => {
     const { ids, action, tecnico_id } = req.body;
     if (!ids || !ids.length) return res.status(400).json({ error: "Missing ids" });
+
+    // Buscar dados antigos para o log
+    const { data: antigos } = await supabase.from('equipamentos').select('*').in('id', ids);
 
     let updatePayload = {};
     if (action === 'devolve') {
@@ -133,9 +220,13 @@ app.post('/api/equipamentos/move', async (req, res) => {
     const { data, error } = await supabase
         .from('equipamentos')
         .update(updatePayload)
-        .in('id', ids);
+        .in('id', ids)
+        .select();
         
     if (error) return res.status(500).json({ error: error.message });
+
+    logAudit(req.user.id, req.user.email, 'MOVIMENTAR', 'equipamentos', ids.join(','), antigos, data);
+
     res.json({ success: true, changes: ids.length });
 });
 
@@ -188,7 +279,7 @@ app.get('/api/tecnicos', async (req, res) => {
     res.json(rows);
 });
 
-app.post('/api/tecnicos', async (req, res) => {
+app.post('/api/tecnicos', restrictTo('master', 'gerente'), async (req, res) => {
     const { nome, cidade_principal, sub_cidades } = req.body;
     const { data, error } = await supabase
         .from('tecnicos')
@@ -197,14 +288,22 @@ app.post('/api/tecnicos', async (req, res) => {
         
     if (error) return res.status(500).json({ error: error.message });
 
+    if (data && data.length > 0) {
+        logAudit(req.user.id, req.user.email, 'CADASTRAR', 'tecnicos', data[0].id, null, data[0]);
+    }
+
     if (!data || data.length === 0) return res.json({ success: true, message: "Técnico adicionado (sem retorno de ID)" });
     res.json({ success: true, id: data[0].id });
 });
 
 // Update Technician
-app.put('/api/tecnicos/:id', async (req, res) => {
+app.put('/api/tecnicos/:id', restrictTo('master', 'gerente'), async (req, res) => {
     const { id } = req.params;
     const { nome, cidade_principal, sub_cidades } = req.body;
+
+    // Buscar dados antigos para o log
+    const { data: antigo } = await supabase.from('tecnicos').select('*').eq('id', id).single();
+
     const { data, error } = await supabase
         .from('tecnicos')
         .update({ nome, cidade_principal, sub_cidades })
@@ -212,14 +311,19 @@ app.put('/api/tecnicos/:id', async (req, res) => {
         .select();
 
     if (error) return res.status(500).json({ error: error.message });
+
+    if (data && data.length > 0) {
+        logAudit(req.user.id, req.user.email, 'EDITAR', 'tecnicos', id, antigo, data[0]);
+    }
+
     res.json({ success: true, data: data[0] });
 });
 
 // Delete Technician
-app.delete('/api/tecnicos/:id', async (req, res) => {
+app.delete('/api/tecnicos/:id', restrictTo('master'), async (req, res) => {
     const { id } = req.params;
     
-    // Check if technician has equipment first (optional but good practice)
+    // Check if technician has equipment first
     const { count, error: countError } = await supabase
         .from('equipamentos')
         .select('*', { count: 'exact', head: true })
@@ -229,12 +333,18 @@ app.delete('/api/tecnicos/:id', async (req, res) => {
     if (countError) return res.status(500).json({ error: countError.message });
     if (count > 0) return res.status(400).json({ error: "Não é possível excluir técnico com equipamentos em estoque." });
 
+    // Buscar dados antigos para o log
+    const { data: antigo } = await supabase.from('tecnicos').select('*').eq('id', id).single();
+
     const { error } = await supabase
         .from('tecnicos')
         .delete()
         .eq('id', id);
 
     if (error) return res.status(500).json({ error: error.message });
+    
+    logAudit(req.user.id, req.user.email, 'EXCLUIR', 'tecnicos', id, antigo, null);
+
     res.json({ success: true });
 });
 
@@ -399,6 +509,89 @@ app.put('/api/configuracoes/:chave', async (req, res) => {
         
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
+});
+
+// -- Usuários (Apenas Master) --
+app.get('/api/users', restrictTo('master'), async (req, res) => {
+    const { data, error } = await supabase
+        .from('perfis')
+        .select('*');
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+});
+
+app.post('/api/users', restrictTo('master'), async (req, res) => {
+    const { email, password, role } = req.body;
+    if (!email || !password || !role) return res.status(400).json({ error: 'Dados incompletos' });
+
+    // Criar usuário no Auth (Admin API)
+    const { data: { user }, error: authError } = await supabase.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true
+    });
+
+    if (authError) return res.status(500).json({ error: authError.message });
+
+    // O trigger 'on_auth_user_created' já cria o perfil, 
+    // mas precisamos atualizar o 'role' se for diferente do padrão 'visualizador'
+    if (role !== 'visualizador') {
+        const { error: roleError } = await supabase
+            .from('perfis')
+            .update({ role })
+            .eq('id', user.id);
+        if (roleError) return res.status(500).json({ error: roleError.message });
+    }
+
+    logAudit(req.user.id, req.user.email, 'CADASTRAR_USUARIO', 'perfis', user.id, null, { email, role });
+
+    res.json({ success: true, user });
+});
+
+app.put('/api/users/:id/role', restrictTo('master'), async (req, res) => {
+    const { id } = req.params;
+    const { role } = req.body;
+
+    // Buscar antigo
+    const { data: antigo } = await supabase.from('perfis').select('*').eq('id', id).single();
+
+    const { data, error } = await supabase
+        .from('perfis')
+        .update({ role })
+        .eq('id', id)
+        .select();
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    logAudit(req.user.id, req.user.email, 'ALTERAR_PERMISSAO', 'perfis', id, antigo, data[0]);
+
+    res.json({ success: true, data: data[0] });
+});
+
+app.delete('/api/users/:id', restrictTo('master'), async (req, res) => {
+    const { id } = req.params;
+    if (id === req.user.id) return res.status(400).json({ error: 'Você não pode excluir a si mesmo' });
+
+    // Buscar antigo
+    const { data: antigo } = await supabase.from('perfis').select('*').eq('id', id).single();
+
+    const { error: authError } = await supabase.auth.admin.deleteUser(id);
+    if (authError) return res.status(500).json({ error: authError.message });
+
+    logAudit(req.user.id, req.user.email, 'EXCLUIR_USUARIO', 'perfis', id, antigo, null);
+
+    res.json({ success: true });
+});
+
+// -- Logs de Auditoria (Master e Gerente) --
+app.get('/api/audit', restrictTo('master', 'gerente'), async (req, res) => {
+    const { data, error } = await supabase
+        .from('logs_auditoria')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
 });
 
 // Dashboard stats

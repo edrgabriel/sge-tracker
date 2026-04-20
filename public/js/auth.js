@@ -10,6 +10,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.location.href = 'index.html';
         }
     } else {
+        // Obter papel (role) do usuário logado
+        await syncUserRole(session.access_token);
+
         if (currentPage.includes('index.html') || currentPage.endsWith('/') || currentPage === '') {
             window.location.href = 'dashboard.html';
         }
@@ -64,6 +67,10 @@ async function handleLogin(e) {
             text: error.message,
             customClass: { popup: 'premium-swal' }
         });
+    } else {
+        // Forçar sincronização de role logo após o login
+        await syncUserRole(data.session.access_token);
+        window.location.href = 'dashboard.html';
     }
 }
 
@@ -144,20 +151,45 @@ async function handleResetPassword() {
     }
 }
 
-async function handleLogout() {
-    await window.supabaseClient.auth.signOut();
+async function syncUserRole(token) {
+    try {
+        const res = await fetch('/api/me', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            localStorage.setItem('stoki_role', data.role);
+            localStorage.setItem('stoki_email', data.email);
+        }
+    } catch (e) {
+        console.error('Erro ao sincronizar papel do usuário:', e);
+    }
 }
 
-function toggleAuthMode(mode) {
-    const loginForm = document.getElementById('form-login-wrapper');
-    const regForm = document.getElementById('form-register-wrapper');
-    if (mode === 'register') {
-        loginForm.classList.remove('active');
-        regForm.classList.add('active');
-    } else {
-        regForm.classList.remove('active');
-        loginForm.classList.add('active');
+// Utilitário global para Fetch autenticado
+async function apiFetch(endpoint, options = {}) {
+    const { data: { session } } = await window.supabaseClient.auth.getSession();
+    if (!session) {
+        window.location.href = 'index.html';
+        return;
     }
+
+    const headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json'
+    };
+
+    const response = await fetch(endpoint, { ...options, headers });
+    
+    if (response.status === 401 || response.status === 403) {
+        const err = await response.json();
+        Swal.fire('Acesso Negado', err.error || 'Você não tem permissão', 'error');
+        if (response.status === 401) window.location.href = 'index.html';
+        throw new Error(err.error);
+    }
+
+    return response;
 }
 
 // Bind to window to be accessible from html
@@ -166,3 +198,4 @@ window.handleRegister = handleRegister;
 window.handleResetPassword = handleResetPassword;
 window.handleLogout = handleLogout;
 window.toggleAuthMode = toggleAuthMode;
+window.apiFetch = apiFetch;

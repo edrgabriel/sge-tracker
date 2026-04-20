@@ -1,5 +1,49 @@
 const API_URL = '/api';
 
+// === PERMISSIONS ===
+function applyPermissions() {
+    const role = localStorage.getItem('stoki_role') || 'visualizador';
+    const email = localStorage.getItem('stoki_email') || 'Usuário';
+
+    const emailEl = document.getElementById('user-display-email');
+    const roleEl = document.getElementById('user-display-role');
+    if (emailEl) emailEl.innerText = email;
+    if (roleEl) roleEl.innerText = role;
+
+    // Sidebar Tabs
+    const navUsers = document.getElementById('nav-usuarios');
+    const navLogs = document.getElementById('nav-logs');
+
+    if (role === 'master') {
+        if (navUsers) navUsers.style.display = 'flex';
+        if (navLogs) navLogs.style.display = 'flex';
+    } else if (role === 'gerente') {
+        if (navLogs) navLogs.style.display = 'flex';
+    }
+
+    // Ocultar botões baseado no cargo (Lógica global)
+    if (role === 'visualizador') {
+        document.querySelectorAll('.btn-primary, .fab-container').forEach(el => {
+            if (!el.innerText.includes('Exportar') && !el.innerText.includes('Baixar') && !el.innerText.includes('Relatório')) {
+                el.style.display = 'none';
+            }
+        });
+    }
+
+    if (role === 'operador') {
+        document.querySelectorAll('[data-target="configuracoes"]').forEach(el => el.style.display = 'none');
+    }
+}
+
+function hasPermission(action) {
+    const role = localStorage.getItem('stoki_role');
+    if (role === 'master') return true;
+    if (action === 'delete') return false; 
+    if (role === 'gerente') return ['create', 'edit', 'move', 'report'].includes(action);
+    if (role === 'operador') return ['move', 'create_service'].includes(action);
+    return false;
+}
+
 // === VIEW NAVIGATION ===
 document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
     item.addEventListener('click', (e) => {
@@ -32,12 +76,15 @@ function loadViewData(view) {
     if (view === 'configuracoes') loadConfiguracoes();
     if (view === 'relatorios') loadRelatorios();
     if (view === 'templates') { /* static view */ }
+    if (view === 'usuarios') loadUsuarios();
+    if (view === 'logs') loadLogs();
 }
 
 // === ON LOAD ===
 document.addEventListener('DOMContentLoaded', () => {
     loadDashboard();
     loadConfiguracoes();
+    applyPermissions();
 });
 
 // === MODAL HELPERS ===
@@ -50,7 +97,7 @@ let chartObjTechs = null;
 
 async function loadDashboard() {
     try {
-        const res = await fetch(`${API_URL}/stats`);
+        const res = await apiFetch(`${API_URL}/stats`);
         const stats = await res.json();
         document.getElementById('stat-total').innerText = stats.totalEq || 0;
         document.getElementById('stat-disp').innerText = stats.dispEq || 0;
@@ -133,7 +180,7 @@ function switchEquipTab(tab) {
 
 async function loadEquipamentos() {
     try {
-        const res = await fetch(`${API_URL}/equipamentos`);
+        const res = await apiFetch(`${API_URL}/equipamentos`);
         allEquipamentos = await res.json();
         filterEquipamentos();
     } catch(e) { console.error(e); }
@@ -156,6 +203,9 @@ function filterEquipamentos() {
     const tbody = document.getElementById('tbody-equipamentos');
     tbody.innerHTML = '';
     filtered.forEach(eq => {
+        const canEdit = hasPermission('edit');
+        const canDelete = hasPermission('delete');
+
         let statusClass = 'disponivel';
         if (eq.status === 'Em Estoque Técnico') statusClass = 'estoque';
         if (eq.status === 'Instalado') statusClass = 'instalado';
@@ -172,12 +222,15 @@ function filterEquipamentos() {
                 <td>${dDate}</td>
                 <td>
                     <div style="display:flex; gap:8px;">
+                        ${canEdit ? `
                         <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem;" onclick="editEquipamento(${eq.id})" title="Editar">
                             <i class="fa-solid fa-pen-to-square"></i>
-                        </button>
+                        </button>` : ''}
+                        ${canDelete ? `
                         <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem; color:var(--danger);" onclick="deleteEquipamento(${eq.id})" title="Excluir">
                             <i class="fa-solid fa-trash"></i>
-                        </button>
+                        </button>` : ''}
+                        ${!canEdit && !canDelete ? '<span>-</span>' : ''}
                     </div>
                 </td>
             </tr>
@@ -194,7 +247,7 @@ async function saveEquipamento() {
     if(num.length > 5) return Swal.fire('Atenção', 'O Número Interno deve ter no máximo 5 dígitos!', 'warning');
     
     try {
-        const res = await fetch(`${API_URL}/equipamentos`, {
+        const res = await apiFetch(`${API_URL}/equipamentos`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ num_interno: num, serial: serial, status: 'Disponível', modelo: modelo })
@@ -234,7 +287,7 @@ async function updateEquipamento() {
     if (!num || !serial) return Swal.fire('Atenção', 'Preencha Número Interno e Serial!', 'warning');
 
     try {
-        const res = await fetch(`${API_URL}/equipamentos/${id}`, {
+        const res = await apiFetch(`${API_URL}/equipamentos/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ num_interno: num, serial: serial, modelo: modelo })
@@ -268,7 +321,7 @@ async function deleteEquipamento(id) {
 
     if (result.isConfirmed) {
         try {
-            const res = await fetch(`${API_URL}/equipamentos/${id}`, { method: 'DELETE' });
+            const res = await apiFetch(`${API_URL}/equipamentos/${id}`, { method: 'DELETE' });
             if (res.ok) {
                 Swal.fire('Deletado!', 'Equipamento excluído com sucesso.', 'success');
                 loadEquipamentos();
@@ -364,7 +417,7 @@ async function confirmarUploadLote() {
 
     document.getElementById('btn-confirma-upload').disabled = true;
     try {
-        const res = await fetch(`${API_URL}/equipamentos/bulk`, {
+        const res = await apiFetch(`${API_URL}/equipamentos/bulk`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(pendingExcelPayload)
@@ -388,7 +441,7 @@ async function confirmarUploadLote() {
 // === TÉCNICOS ===
 async function loadTecnicos() {
     try {
-        const res = await fetch(`${API_URL}/tecnicos`);
+        const res = await apiFetch(`${API_URL}/tecnicos`);
         const data = await res.json();
         const tbody = document.getElementById('tbody-tecnicos');
         tbody.innerHTML = '';
@@ -401,28 +454,33 @@ async function loadTecnicos() {
                 ).join('');
             }
             
-            tbody.innerHTML += `
-                <tr>
-                    <td>${t.id}</td>
-                    <td><strong>${t.nome}</strong></td>
-                    <td>${t.cidade_principal}</td>
-                    <td>${subHTML}</td>
-                    <td><span class="status-badge estoque" style="font-size:0.9rem">${t.qtd_estoque || 0}</span></td>
-                    <td>
-                        <div style="display:flex; gap:8px;">
-                            <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem;" onclick="verEstoqueTecnico(${t.id}, '${t.nome}', '${t.cidade_principal}', '${t.sub_cidades || ''}')">
-                                <i class="fa-solid fa-box-open"></i> Ver
-                            </button>
-                            <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem;" onclick="editTecnico(${t.id}, '${t.nome}', '${t.cidade_principal}', '${t.sub_cidades || ''}')" title="Editar">
-                                <i class="fa-solid fa-pen-to-square"></i>
-                            </button>
-                            <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem; color:var(--danger);" onclick="deleteTecnico(${t.id})" title="Excluir">
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-            `;
+                const canEdit = hasPermission('edit');
+                const canDelete = hasPermission('delete');
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${t.id}</td>
+                        <td><strong>${t.nome}</strong></td>
+                        <td>${t.cidade_principal}</td>
+                        <td>${subHTML}</td>
+                        <td><span class="status-badge estoque" style="font-size:0.9rem">${t.qtd_estoque || 0}</span></td>
+                        <td>
+                            <div style="display:flex; gap:8px;">
+                                <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem;" onclick="verEstoqueTecnico(${t.id}, '${t.nome}', '${t.cidade_principal}', '${t.sub_cidades || ''}')">
+                                    <i class="fa-solid fa-box-open"></i> Ver
+                                </button>
+                                ${canEdit ? `
+                                <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem;" onclick="editTecnico(${t.id}, '${t.nome}', '${t.cidade_principal}', '${t.sub_cidades || ''}')" title="Editar">
+                                    <i class="fa-solid fa-pen-to-square"></i>
+                                </button>` : ''}
+                                ${canDelete ? `
+                                <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem; color:var(--danger);" onclick="deleteTecnico(${t.id})" title="Excluir">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
         });
     } catch(e) { console.error(e); }
 }
@@ -439,7 +497,7 @@ async function verEstoqueTecnico(id, nome, cidade, subcidades) {
     openModal('modal-ver-estoque');
     
     try {
-        const res = await fetch(`${API_URL}/equipamentos`);
+        const res = await apiFetch(`${API_URL}/equipamentos`);
         const eqs = await res.json();
         const myEqs = eqs.filter(e => e.tecnico_id === id && e.status === 'Em Estoque Técnico');
         
@@ -470,7 +528,7 @@ async function saveTecnico() {
     if(!nome || !cid) return Swal.fire('Atenção', 'Nome e Cidade são obrigatórios!', 'warning');
     
     try {
-        const res = await fetch(`${API_URL}/tecnicos`, {
+        const res = await apiFetch(`${API_URL}/tecnicos`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ nome, cidade_principal: cid, sub_cidades: sub })
@@ -504,7 +562,7 @@ async function updateTecnico() {
     if (!nome || !cid) return Swal.fire('Atenção', 'Nome e Cidade são obrigatórios!', 'warning');
 
     try {
-        const res = await fetch(`${API_URL}/tecnicos/${id}`, {
+        const res = await apiFetch(`${API_URL}/tecnicos/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ nome, cidade_principal: cid, sub_cidades: sub })
@@ -538,7 +596,7 @@ async function deleteTecnico(id) {
 
     if (result.isConfirmed) {
         try {
-            const res = await fetch(`${API_URL}/tecnicos/${id}`, { method: 'DELETE' });
+            const res = await apiFetch(`${API_URL}/tecnicos/${id}`, { method: 'DELETE' });
             if (res.ok) {
                 Swal.fire('Deletado!', 'Técnico excluído com sucesso.', 'success');
                 loadTecnicos();
@@ -557,7 +615,7 @@ async function deleteTecnico(id) {
 async function loadDistribuicao() {
     try {
         // History
-        const rHist = await fetch(`${API_URL}/distribuicoes`);
+        const rHist = await apiFetch(`${API_URL}/distribuicoes`);
         const hData = await rHist.json();
         const tbody = document.getElementById('tbody-distribuicoes');
         tbody.innerHTML = '';
@@ -575,10 +633,10 @@ let distribuicaoTeckList = [];
 let distribuicaoEqList = [];
 
 async function loadDistribuicaoSelectors() {
-    const rTec = await fetch(`${API_URL}/tecnicos`);
+    const rTec = await apiFetch(`${API_URL}/tecnicos`);
     distribuicaoTeckList = await rTec.json();
     
-    const rEq = await fetch(`${API_URL}/equipamentos`);
+    const rEq = await apiFetch(`${API_URL}/equipamentos`);
     distribuicaoEqList = await rEq.json();
     
     // Populate Origem
@@ -643,7 +701,7 @@ async function salvarDistribuicaoIndividual() {
             ? { ids: eqIds, action: 'devolve' } 
             : { ids: eqIds, action: 'assign', tecnico_id: destId };
 
-        const res = await fetch(`${API_URL}/equipamentos/move`, {
+        const res = await apiFetch(`${API_URL}/equipamentos/move`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload)
@@ -671,7 +729,7 @@ async function handleAssignUpload(event) {
         const json = XLSX.utils.sheet_to_json(firstSheet);
         
         // Fetch equipments and tech arrays map
-        const resEq = await fetch(`${API_URL}/equipamentos`);
+        const resEq = await apiFetch(`${API_URL}/equipamentos`);
         const eqsInfo = await resEq.json();
         const eqMap = {}; 
         eqsInfo.forEach(eq => {
@@ -681,7 +739,7 @@ async function handleAssignUpload(event) {
             }
         });
         
-        const resTec = await fetch(`${API_URL}/tecnicos`);
+        const resTec = await apiFetch(`${API_URL}/tecnicos`);
         const tecsInfo = await resTec.json();
         const tecMap = {};
         tecsInfo.forEach(t => {
@@ -708,7 +766,7 @@ async function handleAssignUpload(event) {
         for (const tecId in assignments) {
             const ids = assignments[tecId];
             if(ids.length > 0) {
-                await fetch(`${API_URL}/equipamentos/assign`, {
+                await apiFetch(`${API_URL}/equipamentos/assign`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ ids: ids, tecnico_id: tecId })
@@ -761,7 +819,7 @@ async function handleServicosUpload(event) {
         if (payloads.length === 0) return Swal.fire('Atenção', 'Nenhum dado com "serial" e "tipo_servico" válido encontrado!', 'warning');
         
         try {
-            const res = await fetch(`${API_URL}/servicos/bulk`, {
+            const res = await apiFetch(`${API_URL}/servicos/bulk`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payloads)
@@ -784,7 +842,7 @@ async function recolherEquipamentoManual() {
     if(!serial) return Swal.fire('Atenção', 'Digite um Serial!', 'warning');
     
     try {
-        const res = await fetch(`${API_URL}/equipamentos/recolher`, {
+        const res = await apiFetch(`${API_URL}/equipamentos/recolher`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify([{ serial }])
@@ -823,7 +881,7 @@ async function handleRecolherUpload(event) {
         if (payloads.length === 0) return Swal.fire('Atenção', 'Nenhum serial válido encontrado!', 'warning');
         
         try {
-            const res = await fetch(`${API_URL}/equipamentos/recolher`, {
+            const res = await apiFetch(`${API_URL}/equipamentos/recolher`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payloads)
@@ -841,7 +899,7 @@ async function handleRecolherUpload(event) {
 
 async function loadServicos() {
     try {
-        const res = await fetch(`${API_URL}/servicos`);
+        const res = await apiFetch(`${API_URL}/servicos`);
         const data = await res.json();
         const tbody = document.getElementById('tbody-servicos');
         tbody.innerHTML = '';
@@ -863,14 +921,14 @@ async function loadServicos() {
 
 async function loadServiceFormData() {
     // Load Tecnicos Dropdown
-    const tRes = await fetch(`${API_URL}/tecnicos`);
+    const tRes = await apiFetch(`${API_URL}/tecnicos`);
     const ts = await tRes.json();
     const tSel = document.getElementById('sel-tecnico');
     tSel.innerHTML = '<option value="">Selecione...</option>';
     ts.forEach(t => tSel.innerHTML += `<option value="${t.id}">${t.nome}</option>`);
 
     // Load Tipos
-    const cRes = await fetch(`${API_URL}/configuracoes`);
+    const cRes = await apiFetch(`${API_URL}/configuracoes`);
     const confs = await cRes.json();
     const tServ = confs.find(c => c.chave === 'tipos_servico');
     const sSel = document.getElementById('sel-tipo-servico');
@@ -884,7 +942,7 @@ async function loadTecnicoInventory() {
     const tecId = document.getElementById('sel-tecnico').value;
     if(!tecId) return;
     
-    const eRes = await fetch(`${API_URL}/equipamentos`);
+    const eRes = await apiFetch(`${API_URL}/equipamentos`);
     const eqs = await eRes.json();
     
     // Filter equipments Em Estoque for this Technician
@@ -929,7 +987,7 @@ async function saveServico() {
     if(!tId || !eId || !sType) return Swal.fire('Atenção', 'Selecione as opções!', 'warning');
     
     try {
-        const res = await fetch(`${API_URL}/servicos`, {
+        const res = await apiFetch(`${API_URL}/servicos`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ equipamento_id: eId, tecnico_id: tId, tipo_servico: sType, placa_obs })
@@ -950,7 +1008,7 @@ let tiposArray = [];
 let modelosArray = [];
 
 async function loadConfiguracoes() {
-    const cRes = await fetch(`${API_URL}/configuracoes`);
+    const cRes = await apiFetch(`${API_URL}/configuracoes`);
     const confs = await cRes.json();
     const tServ = confs.find(c => c.chave === 'tipos_servico');
     const tMod = confs.find(c => c.chave === 'modelos_equipamento');
@@ -1017,7 +1075,7 @@ function removerModeloEquip(index) {
 }
 
 async function saveConfigToDB(chave, arrayData, renderCallback) {
-    await fetch(`${API_URL}/configuracoes/${chave}`, {
+    await apiFetch(`${API_URL}/configuracoes/${chave}`, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ valor: JSON.stringify(arrayData) })
@@ -1029,13 +1087,13 @@ async function saveConfigToDB(chave, arrayData, renderCallback) {
 async function loadRelatorios() {
     // Populate dropdowns for History filter
     try {
-        const rTec = await fetch(`${API_URL}/tecnicos`);
+        const rTec = await apiFetch(`${API_URL}/tecnicos`);
         const tecs = await rTec.json();
         const tSel = document.getElementById('rel_srv_tec');
         tSel.innerHTML = '<option value="">-- Todos Técnicos --</option>';
         tecs.forEach(t => tSel.innerHTML += `<option value="${t.id}">${t.nome}</option>`);
 
-        const cRes = await fetch(`${API_URL}/configuracoes`);
+        const cRes = await apiFetch(`${API_URL}/configuracoes`);
         const confs = await cRes.json();
         const tServ = confs.find(c => c.chave === 'tipos_servico');
         const sSel = document.getElementById('rel_srv_tipo');
@@ -1066,7 +1124,7 @@ function processGenericReport(title, headers, rows, isExcel, excelName) {
 }
 
 async function exportFullDatabase() {
-    const res = await fetch(`${API_URL}/equipamentos`);
+    const res = await apiFetch(`${API_URL}/equipamentos`);
     const eqs = await res.json();
     const ws = XLSX.utils.json_to_sheet(eqs);
     const wb = XLSX.utils.book_new();
@@ -1075,7 +1133,7 @@ async function exportFullDatabase() {
 }
 
 async function relatorioEstoque(isExcel) {
-    const res = await fetch(`${API_URL}/equipamentos`);
+    const res = await apiFetch(`${API_URL}/equipamentos`);
     const eqs = await res.json();
     const data = eqs.filter(e => e.status === 'Em Estoque Técnico');
     
@@ -1092,10 +1150,10 @@ async function relatorioEstoque(isExcel) {
 }
 
 async function relatorioInstalados(isExcel) {
-    const res = await fetch(`${API_URL}/servicos`);
+    const res = await apiFetch(`${API_URL}/servicos`);
     const srvs = await res.json();
     
-    const resEq = await fetch(`${API_URL}/equipamentos`);
+    const resEq = await apiFetch(`${API_URL}/equipamentos`);
     const eqs = await resEq.json();
     const instEqs = eqs.filter(e => e.status === 'Instalado');
     
@@ -1123,9 +1181,9 @@ async function relatorioInstalados(isExcel) {
 }
 
 async function relatorioCidades(isExcel) {
-    const resTec = await fetch(`${API_URL}/tecnicos`);
+    const resTec = await apiFetch(`${API_URL}/tecnicos`);
     const tecnicos = await resTec.json();
-    const resEq = await fetch(`${API_URL}/equipamentos`);
+    const resEq = await apiFetch(`${API_URL}/equipamentos`);
     const eqs = await resEq.json();
     
     const map = {};
@@ -1163,7 +1221,7 @@ async function relatorioSrvHist(isExcel) {
     const tId = document.getElementById('rel_srv_tec').value;
     const tipo = document.getElementById('rel_srv_tipo').value;
 
-    const res = await fetch(`${API_URL}/servicos`);
+    const res = await apiFetch(`${API_URL}/servicos`);
     const srvs = await res.json();
     
     const filtered = srvs.filter(s => {
@@ -1248,4 +1306,148 @@ function dlTemplateTecs() {
         { nome: "João Alves", cidade_principal: "São Paulo", sub_cidades: "Osasco, Guarulhos" },
         { nome: "Pedro Lima", cidade_principal: "Campinas", sub_cidades: "Valinhos, Vinhedo" }
     ]);
+}
+// === USUÁRIOS (MASTER) ===
+async function loadUsuarios() {
+    try {
+        const res = await apiFetch(`${API_URL}/users`);
+        const users = await res.json();
+        const tbody = document.getElementById('tbody-usuarios');
+        tbody.innerHTML = '';
+
+        users.forEach(u => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${u.email}</td>
+                <td><span class="badge ${u.role === 'master' ? 'badge-danger' : 'badge-info'}">${u.role.toUpperCase()}</span></td>
+                <td>${new Date(u.created_at).toLocaleDateString()}</td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick="changeUserRole('${u.id}', '${u.role}')" title="Alterar Cargo">
+                        <i class="fa-solid fa-user-tag"></i>
+                    </button>
+                    ${u.email !== localStorage.getItem('stoki_email') ? `
+                    <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}')" title="Excluir">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>` : ''}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) { console.error(e); }
+}
+
+async function saveUsuario() {
+    const email = document.getElementById('user-email').value;
+    const password = document.getElementById('user-pass').value;
+    const role = document.getElementById('user-role').value;
+
+    if (!email || !password) return Swal.fire('Erro', 'Preencha todos os campos', 'error');
+
+    try {
+        const res = await apiFetch(`${API_URL}/users`, {
+            method: 'POST',
+            body: JSON.stringify({ email, password, role })
+        });
+        if (res.ok) {
+            Swal.fire('Sucesso', 'Usuário criado com sucesso!', 'success');
+            closeModal('modal-add-usuario');
+            loadUsuarios();
+        }
+    } catch (e) {
+        Swal.fire('Erro', e.message, 'error');
+    }
+}
+
+async function changeUserRole(id, currentRole) {
+    const { value: role } = await Swal.fire({
+        title: 'Alterar Cargo',
+        input: 'select',
+        inputOptions: {
+            'visualizador': 'Visualizador',
+            'operador': 'Operador',
+            'gerente': 'Gerente',
+            'master': 'Master'
+        },
+        inputValue: currentRole,
+        showCancelButton: true
+    });
+
+    if (role) {
+        try {
+            await apiFetch(`${API_URL}/users/${id}/role`, {
+                method: 'PUT',
+                body: JSON.stringify({ role })
+            });
+            loadUsuarios();
+            Swal.fire('Atualizado!', 'O cargo foi alterado.', 'success');
+        } catch (e) {
+            Swal.fire('Erro', e.message, 'error');
+        }
+    }
+}
+
+async function deleteUser(id) {
+    const result = await Swal.fire({
+        title: 'Tem certeza?',
+        text: "O acesso deste usuário será revogado!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'Sim, excluir!'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            await apiFetch(`${API_URL}/users/${id}`, { method: 'DELETE' });
+            loadUsuarios();
+            Swal.fire('Excluído!', 'O usuário foi removido.', 'success');
+        } catch (e) {
+            Swal.fire('Erro', e.message, 'error');
+        }
+    }
+}
+
+// === LOGS (MASTER/GERENTE) ===
+async function loadLogs() {
+    try {
+        const res = await apiFetch(`${API_URL}/audit`);
+        const logs = await res.json();
+        const tbody = document.getElementById('tbody-logs');
+        tbody.innerHTML = '';
+
+        logs.forEach(l => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="font-size:0.75rem">${new Date(l.created_at).toLocaleString()}</td>
+                <td>${l.user_email}</td>
+                <td><span class="badge badge-info">${l.acao}</span></td>
+                <td>${l.tabela_alvo}</td>
+                <td>${l.item_id || '-'}</td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick='viewLogDetail(${JSON.stringify(l)})'>
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) { console.error(e); }
+}
+
+function viewLogDetail(log) {
+    Swal.fire({
+        title: `Detalhes: ${log.acao}`,
+        html: `
+            <div style="text-align:left; font-size:0.85rem;">
+                <p><strong>Tabela:</strong> ${log.tabela_alvo}</p>
+                <p><strong>ID Item:</strong> ${log.item_id}</p>
+                <hr>
+                <p><strong>Dados Anteriores:</strong></p>
+                <pre style="background:#f4f4f4; padding:5px;">${JSON.stringify(log.dados_antigos, null, 2)}</pre>
+                <p><strong>Dados Novos:</strong></p>
+                <pre style="background:#f4f4f4; padding:5px;">${JSON.stringify(log.dados_novos, null, 2)}</pre>
+            </div>
+        `,
+        width: '600px'
+    });
 }
