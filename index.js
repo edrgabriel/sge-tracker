@@ -600,6 +600,11 @@ app.get('/api/equipamentos/:id/historico', async (req, res) => {
 
     if (error) return res.status(500).json({ error: error.message });
     
+    const rows = data.map(h => ({
+        ...h,
+        tecnico_nome: h.tecnicos ? h.tecnicos.nome : null
+    }));
+
     res.json(rows);
 });
 
