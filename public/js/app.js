@@ -206,10 +206,15 @@ function switchEquipTab(tab) {
     document.querySelectorAll('#view-equipamentos .tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('#view-equipamentos .tab-content').forEach(c => c.style.display = 'none');
     
-    event.target.classList.add('active');
-    document.getElementById(`equip-tab-${tab}`).style.display = 'block';
+    // Encontrar o botão clicado
+    if (event && event.target) {
+        event.target.classList.add('active');
+    }
     
-    if(tab === 'lista') loadEquipamentos();
+    const targetEl = document.getElementById(`equip-tab-${tab}`);
+    if (targetEl) targetEl.style.display = 'block';
+    
+    if (tab === 'lista' || tab === 'devolvidos') loadEquipamentos();
 }
 
 async function loadEquipamentos() {
@@ -226,7 +231,9 @@ function filterEquipamentos() {
     const fSer = document.getElementById('filter-eq-ser').value.toLowerCase();
     const fTec = document.getElementById('filter-eq-tec').value.toLowerCase();
 
-    const filtered = allEquipamentos.filter(eq => {
+    // 1. Renderizar Lista Geral (Estoque Geral)
+    const filteredLista = allEquipamentos.filter(eq => {
+        if (eq.status === 'Pendente') return false; // Não mostrar na lista geral
         const matchStatus = fStatus ? eq.status.toLowerCase().includes(fStatus) : true;
         const matchNum = fNum ? eq.num_interno.toLowerCase().includes(fNum) : true;
         const matchSer = fSer ? eq.serial.toLowerCase().includes(fSer) : true;
@@ -235,41 +242,77 @@ function filterEquipamentos() {
     });
 
     const tbody = document.getElementById('tbody-equipamentos');
-    tbody.innerHTML = '';
-    filtered.forEach(eq => {
-        const canEdit = hasPermission('edit');
-        const canDelete = hasPermission('delete');
+    if (tbody) {
+        tbody.innerHTML = '';
+        filteredLista.forEach(eq => {
+            const canEdit = hasPermission('edit');
+            const canDelete = hasPermission('delete');
+            let statusClass = 'disponivel';
+            if (eq.status === 'Em Estoque Técnico') statusClass = 'estoque';
+            if (eq.status === 'Instalado') statusClass = 'instalado';
+            let dDate = eq.data_distribuicao ? new Date(eq.data_distribuicao).toLocaleDateString('pt-BR') : '-';
 
-        let statusClass = 'disponivel';
-        if (eq.status === 'Em Estoque Técnico') statusClass = 'estoque';
-        if (eq.status === 'Instalado') statusClass = 'instalado';
-        
-        let dDate = eq.data_distribuicao ? new Date(eq.data_distribuicao).toLocaleDateString('pt-BR') : '-';
+            tbody.innerHTML += `
+                <tr>
+                    <td><strong>${eq.num_interno}</strong></td>
+                    <td>${eq.modelo || '-'}</td>
+                    <td>${eq.serial}</td>
+                    <td><span class="status-badge ${statusClass}">${eq.status}</span></td>
+                    <td>${eq.tecnico_nome || '-'}</td>
+                    <td>${dDate}</td>
+                    <td>
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem;" onclick="verHistorico('${eq.id}')" title="Ver Histórico">
+                                <i class="fa-solid fa-clock-rotate-left"></i>
+                            </button>
+                            ${canEdit ? `
+                            <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem;" onclick="editEquipamento(${eq.id})" title="Editar">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </button>` : ''}
+                            ${canDelete ? `
+                            <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem; color:var(--danger);" onclick="deleteEquipamento(${eq.id})" title="Excluir">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+    }
 
-        tbody.innerHTML += `
-            <tr>
-                <td><strong>${eq.num_interno}</strong></td>
-                <td>${eq.modelo || '-'}</td>
-                <td>${eq.serial}</td>
-                <td><span class="status-badge ${statusClass}">${eq.status}</span></td>
-                <td>${eq.tecnico_nome || '-'}</td>
-                <td>${dDate}</td>
-                <td>
-                    <div style="display:flex; gap:8px;">
-                        ${canEdit ? `
-                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem;" onclick="editEquipamento(${eq.id})" title="Editar">
-                            <i class="fa-solid fa-pen-to-square"></i>
-                        </button>` : ''}
-                        ${canDelete ? `
-                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem; color:var(--danger);" onclick="deleteEquipamento(${eq.id})" title="Excluir">
-                            <i class="fa-solid fa-trash"></i>
-                        </button>` : ''}
-                        ${!canEdit && !canDelete ? '<span>-</span>' : ''}
-                    </div>
-                </td>
-            </tr>
-        `;
-    });
+    // 2. Renderizar Lista de Devolvidos (Pendentes)
+    const pendingList = allEquipamentos.filter(eq => eq.status === 'Pendente');
+    const tbodyDev = document.getElementById('tbody-devolvidos');
+    const bulkActions = document.getElementById('bulk-treatment-actions');
+    
+    if (tbodyDev) {
+        tbodyDev.innerHTML = '';
+        if (bulkActions) bulkActions.style.display = pendingList.length > 0 ? 'block' : 'none';
+
+        pendingList.forEach(eq => {
+            const rDate = eq.data_retorno ? new Date(eq.data_retorno).toLocaleDateString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : '-';
+            tbodyDev.innerHTML += `
+                <tr>
+                    <td><input type="checkbox" class="check-devolvido" value="${eq.id}"></td>
+                    <td><strong>${eq.num_interno}</strong></td>
+                    <td>${eq.serial}</td>
+                    <td>${eq.modelo || '-'}</td>
+                    <td><span style="font-family:monospace; background:#eee; padding:2px 5px; border-radius:3px;">${eq.ultima_placa || '-'}</span></td>
+                    <td>${rDate}</td>
+                    <td>
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn btn-primary" style="padding:4px 8px; font-size:0.8rem;" onclick="tratarEquipamento('${eq.id}')" title="Tratamento Concluído">
+                                <i class="fa-solid fa-check"></i>
+                            </button>
+                            <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem;" onclick="verHistorico('${eq.id}')" title="Linha do Tempo">
+                                <i class="fa-solid fa-clock-rotate-left"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+    }
 }
 
 async function saveEquipamento() {
@@ -367,6 +410,140 @@ async function deleteEquipamento(id) {
             console.error(e);
             Swal.fire('Erro', 'Erro de conexão.', 'error');
         }
+    }
+}
+
+// === TRATAMENTO E HISTÓRICO ===
+
+function toggleAllDevolvidos() {
+    const mainCheck = document.getElementById('check-all-devolvidos');
+    const checks = document.querySelectorAll('.check-devolvido');
+    checks.forEach(c => c.checked = mainCheck.checked);
+}
+
+async function tratarEquipamento(id) {
+    const result = await Swal.fire({
+        title: 'Confirmar Tratamento?',
+        text: "O equipamento voltará para o Estoque Disponível.",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Sim, concluir tratamento',
+        cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const res = await apiFetch(`${API_URL}/equipamentos/tratar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: [id] })
+            });
+
+            if (res.ok) {
+                Swal.fire('Sucesso', 'Equipamento disponível novamente.', 'success');
+                loadEquipamentos();
+            } else {
+                const err = await res.json();
+                Swal.fire('Erro', err.error || 'Falha no tratamento', 'error');
+            }
+        } catch (e) { console.error(e); }
+    }
+}
+
+async function bulkTratarEquipamentos() {
+    const ids = Array.from(document.querySelectorAll('.check-devolvido:checked')).map(c => c.value);
+    if (ids.length === 0) return Swal.fire('Atenção', 'Selecione pelo menos um equipamento!', 'warning');
+
+    const result = await Swal.fire({
+        title: `Tratar ${ids.length} Equipamentos?`,
+        text: "Eles serão retornados ao Estoque Disponível em lote.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sim, tratar todos',
+        cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const res = await apiFetch(`${API_URL}/equipamentos/tratar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids })
+            });
+
+            if (res.ok) {
+                Swal.fire('Sucesso', 'Equipamentos tratados com sucesso!', 'success');
+                loadEquipamentos();
+            } else {
+                const err = await res.json();
+                Swal.fire('Erro', err.error || 'Falha no tratamento em lote', 'error');
+            }
+        } catch (e) { console.error(e); }
+    }
+}
+
+async function verHistorico(id) {
+    try {
+        const res = await apiFetch(`${API_URL}/equipamentos/${id}/historico`);
+        const history = await res.json();
+        const eq = allEquipamentos.find(e => e.id == id);
+
+        // Header do Modal
+        const headerInfo = document.getElementById('hist-tracker-info');
+        headerInfo.innerHTML = `
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <div><strong>Nº Interno:</strong> ${eq?.num_interno || '-'}</div>
+                <div><strong>Serial:</strong> ${eq?.serial || '-'}</div>
+                <div><strong>Modelo:</strong> ${eq?.modelo || '-'}</div>
+                <div><strong>Status Atual:</strong> <span class="status-badge">${eq?.status || '-'}</span></div>
+            </div>
+        `;
+
+        // Timeline
+        const timeline = document.getElementById('timeline-movimentacao');
+        timeline.innerHTML = '';
+
+        if (history.length === 0) {
+            timeline.innerHTML = '<p style="text-align:center; color:var(--text-muted); padding:20px;">Nenhum registro encontrado para este equipamento.</p>';
+        } else {
+            history.forEach(item => {
+                const dateStr = new Date(item.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                
+                let icon = 'fa-circle-dot';
+                let color = '#ccc';
+                let label = item.tipo;
+
+                if (item.tipo === 'INSTALACAO') { icon = 'fa-truck-field'; color = '#8b5cf6'; label = 'Instalado em Veículo'; }
+                if (item.tipo === 'DEVOLUCAO') { icon = 'fa-arrow-rotate-left'; color = '#f59e0b'; label = 'Devolvido / Recolhido'; }
+                if (item.tipo === 'TRATAMENTO') { icon = 'fa-screwdriver-wrench'; color = '#10b981'; label = 'Tratamento Concluído'; }
+                if (item.tipo === 'CADASTRADO') { icon = 'fa-plus'; color = '#3b82f6'; label = 'Cadastrado no Sistema'; }
+
+                timeline.innerHTML += `
+                    <div style="display:flex; gap:15px; margin-bottom:20px; position:relative;">
+                        <div style="flex-shrink:0; width:40px; height:40px; border-radius:50%; background:${color}22; color:${color}; display:flex; align-items:center; justify-content:center; border:1px solid ${color}44;">
+                            <i class="fa-solid ${icon}"></i>
+                        </div>
+                        <div style="flex-grow:1; border-bottom:1px solid #eee; padding-bottom:10px;">
+                            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                                <strong style="color:var(--text-main);">${label}</strong>
+                                <span style="font-size:0.8rem; color:var(--text-muted);">${dateStr}</span>
+                            </div>
+                            <div style="font-size:0.9rem; color:var(--text-muted);">
+                                ${item.placa ? `<div><i class="fa-solid fa-car-rear"></i> Placa: <strong>${item.placa}</strong></div>` : ''}
+                                ${item.tecnico_nome && item.tecnico_nome !== 'N/A' ? `<div><i class="fa-solid fa-user-gear"></i> Técnico: <strong>${item.tecnico_nome}</strong></div>` : ''}
+                                ${item.user_email ? `<div style="font-size:0.75rem; margin-top:5px; font-style:italic;">Realizado por: ${item.user_email}</div>` : ''}
+                                ${item.observacao ? `<div style="margin-top:5px; padding:5px; background:#f0f4f8; border-radius:4px; font-size:0.85rem;">"${item.observacao}"</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        openModal('modal-historico');
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Erro', 'Não foi possível carregar o histórico.', 'error');
     }
 }
 

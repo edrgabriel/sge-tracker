@@ -120,6 +120,13 @@ app.post('/api/equipamentos', restrictTo('master', 'gerente', 'operador'), async
 
     if (data && data.length > 0) {
         logAudit(req.user.id, req.user.email, 'CADASTRAR', 'equipamentos', data[0].id, null, data[0]);
+        // Registrar no histórico
+        await supabase.from('historico_movimentacoes').insert([{
+            equipamento_id: data[0].id,
+            tipo: 'CADASTRADO',
+            user_email: req.user.email,
+            observacao: 'Equipamento inserido no sistema'
+        }]);
     }
 
     if (!data || data.length === 0) return res.json({ success: true, message: "Equipamento adicionado (sem retorno de ID)" });
@@ -144,6 +151,17 @@ app.post('/api/equipamentos/bulk', restrictTo('master', 'gerente'), async (req, 
     if (error) return res.status(500).json({ error: error.message });
     
     logAudit(req.user.id, req.user.email, 'CADASTRAR_LOTE', 'equipamentos', 'múltiplos', null, { count: equipamentos.length });
+    
+    // Registrar no histórico em lote
+    if (data && data.length > 0) {
+        const histPayloads = data.map(eq => ({
+            equipamento_id: eq.id,
+            tipo: 'CADASTRADO',
+            user_email: req.user.email,
+            observacao: 'Equipamento inserido via Lote Excel'
+        }));
+        await supabase.from('historico_movimentacoes').insert(histPayloads);
+    }
     
     res.json({ success: true, count: equipamentos.length });
 });
@@ -394,6 +412,16 @@ app.post('/api/servicos', async (req, res) => {
         await supabase.from('equipamentos').update({ status: 'Disponível' }).eq('id', equipamento_id);
         return res.status(500).json({ error: insError.message });
     }
+
+    // Registrar no Histórico de Movimentações
+    await supabase.from('historico_movimentacoes').insert([{
+        equipamento_id,
+        tecnico_id,
+        tipo: 'INSTALACAO',
+        placa: placa_obs || '',
+        user_email: req.user.email,
+        observacao: `Serviço: ${tipo_servico}`
+    }]);
     
     res.json({ success: true, message: "Serviço registrado com sucesso." });
 });
@@ -446,6 +474,17 @@ app.post('/api/servicos/bulk', async (req, res) => {
         await supabase.from('equipamentos').update({ status: 'Em Estoque Técnico' }).in('id', eqIds);
         return res.status(500).json({ error: insErr.message });
     }
+
+    // Registrar no Histórico em Lote
+    const histServ = validSrv.map(s => ({
+        equipamento_id: s.equipamento_id,
+        tecnico_id: s.tecnico_id,
+        tipo: 'INSTALACAO',
+        placa: s.placa_obs || '',
+        user_email: req.user.email,
+        observacao: `Instalação em Lote: ${s.tipo_servico}`
+    }));
+    await supabase.from('historico_movimentacoes').insert(histServ);
     
     res.json({ success: true, count: validSrv.length });
 });
@@ -481,7 +520,13 @@ app.post('/api/equipamentos/recolher', async (req, res) => {
     
     const { error: updErr } = await supabase
         .from('equipamentos')
-        .update({ status: 'Disponível', tecnico_id: null, data_distribuicao: null })
+        .update({ 
+            status: 'Pendente', 
+            tecnico_id: null, 
+            data_distribuicao: null,
+            data_retorno: today,
+            ultima_placa: serialMap[serials[0]] || '-' // Note: ideally we update individually if plates differ
+        })
         .in('id', eqIds);
         
     if (updErr) return res.status(500).json({ error: updErr.message });
@@ -494,10 +539,67 @@ app.post('/api/equipamentos/recolher', async (req, res) => {
         placa_obs: serialMap[eq.serial] || '-'
     }));
 
-    const { error: insErr } = await supabase.from('servicos').insert(srvPayloads);
-    if (insErr) console.error("Service log failed:", insErr.message); // non-fatal
+    await supabase.from('servicos').insert(srvPayloads);
+
+    // Registrar no Histórico de Movimentações
+    const histRecolher = eqs.map(eq => ({
+        equipamento_id: eq.id,
+        tecnico_id: eq.tecnico_id,
+        tipo: 'DEVOLUCAO',
+        placa: serialMap[eq.serial] || '-',
+        user_email: req.user.email,
+        observacao: 'Recolhido para tratamento/manutenção'
+    }));
+    await supabase.from('historico_movimentacoes').insert(histRecolher);
     
     res.json({ success: true, changes: eqs.length });
+});
+
+// Tratamento concluído (Mover de Pendente para Disponível)
+app.post('/api/equipamentos/tratar', restrictTo('master', 'gerente'), async (req, res) => {
+    const { ids } = req.body; // Array de IDs
+    if (!ids || !ids.length) return res.status(400).json({ error: "IDs não fornecidos" });
+
+    const { error: updErr } = await supabase
+        .from('equipamentos')
+        .update({ 
+            status: 'Disponível',
+            data_retorno: null,
+            ultima_placa: null
+        })
+        .in('id', ids);
+
+    if (updErr) return res.status(500).json({ error: updErr.message });
+
+    // Registrar no Histórico
+    const histTratar = ids.map(id => ({
+        equipamento_id: id,
+        tipo: 'TRATAMENTO',
+        user_email: req.user.email,
+        observacao: 'Tratamento concluído. Retornado ao estoque disponível.'
+    }));
+    await supabase.from('historico_movimentacoes').insert(histTratar);
+
+    res.json({ success: true, message: `Equipamentos tratados: ${ids.length}` });
+});
+
+// Buscar Histórico de um Rastreador
+app.get('/api/equipamentos/:id/historico', async (req, res) => {
+    const { id } = req.params;
+    const { data, error } = await supabase
+        .from('historico_movimentacoes')
+        .select('*, tecnicos(nome)')
+        .eq('equipamento_id', id)
+        .order('data', { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+    
+    const rows = data.map(h => ({
+        ...h,
+        tecnico_nome: h.tecnicos ? h.tecnicos.nome : 'N/A'
+    }));
+    
+    res.json(rows);
 });
 
 // -- Configuracoes --

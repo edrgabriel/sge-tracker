@@ -291,6 +291,7 @@ body {
 .status-badge.disponivel { background: rgba(16,185,129,0.1); color: var(--success); }
 .status-badge.estoque { background: rgba(245,158,11,0.1); color: var(--warning); }
 .status-badge.instalado { background: rgba(139,92,246,0.1); color: #8b5cf6; }
+.status-badge.pendente { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
 
 /* Modals */
 .modal-overlay {
@@ -591,6 +592,26 @@ body {
     font-size: 1rem;
     transition: all 0.3s ease;
     outline: none;
+}
+
+/* Timeline Histórico */
+.timeline {
+    position: relative;
+    padding-left: 10px;
+}
+.timeline::before {
+    content: '';
+    position: absolute;
+    left: 29px;
+    top: 5px;
+    bottom: 5px;
+    width: 2px;
+    background: #e2e8f0;
+    z-index: 0;
+}
+.timeline > div {
+    position: relative;
+    z-index: 1;
 }
 
 .input-icon-wrapper input::placeholder {

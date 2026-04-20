@@ -167,8 +167,9 @@
                 <section id="view-equipamentos" class="view-section">
                     
                     <div class="tabs-container" style="margin-bottom: 20px;">
-                        <button class="tab-btn active" onclick="switchEquipTab('lista')">Lista de Equipamentos</button>
-                        <button class="tab-btn" onclick="switchEquipTab('cadastrar')">Cadastrar Equipamento</button>
+                        <div class="tab-btn active" onclick="switchEquipTab('lista')">Estoque Geral</div>
+                        <div class="tab-btn" onclick="switchEquipTab('devolvidos')">Devolvidos (Pendente)</div>
+                        <div class="tab-btn" onclick="switchEquipTab('excel')">Importar Excel</div>
                     </div>
 
                     <!-- ABA LISTA -->
@@ -248,6 +249,36 @@
                             </button>
                             <input type="file" id="file-upload" accept=".xlsx, .xls" style="display:none;" onchange="handleExcelUpload(event)">
                         </div>
+                    </div>
+                </section>
+
+                <!-- ABA DEVOLVIDOS -->
+                <section id="equip-tab-devolvidos" class="tab-content" style="display:none;">
+                    <div class="action-bar card" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; padding: 15px;">
+                        <h3 style="margin:0; font-size: 1.1rem; color: var(--text-main);">Equipamentos em Devolução (Pendente)</h3>
+                        <div id="bulk-treatment-actions" style="display:none;">
+                            <button class="btn btn-primary" onclick="bulkTratarEquipamentos()">
+                                <i class="fa-solid fa-check-double"></i> Tratar Selecionados
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card table-card">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;"><input type="checkbox" id="check-all-devolvidos" onclick="toggleAllDevolvidos()"></th>
+                                    <th>Nº Interno</th>
+                                    <th>Serial</th>
+                                    <th>Modelo</th>
+                                    <th>Última Placa</th>
+                                    <th>Data Retorno</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-devolvidos">
+                                <!-- Populated via JS -->
+                            </tbody>
+                        </table>
                     </div>
                 </section>
 
@@ -856,5 +887,26 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
     <script src="js/app.js"></script>
+
+    <!-- Modal Histórico de Movimentação -->
+    <div class="modal-overlay" id="modal-historico">
+        <div class="modal" style="width: 800px; max-width: 95%;">
+            <div class="modal-header">
+                <h3>Histórico de Movimentações</h3>
+                <button class="close-btn" onclick="closeModal('modal-historico')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <div class="tracker-info" id="hist-tracker-info" style="margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+                    <!-- Track info summary -->
+                </div>
+                <div class="timeline" id="timeline-movimentacao">
+                    <!-- History steps -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-historico')">Fechar</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
