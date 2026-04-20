@@ -602,7 +602,7 @@
                 <section id="view-usuarios" class="view-section">
                     <div class="header-actions">
                         <h2>Gerenciamento de Usuários</h2>
-                        <button class="btn btn-primary" id="btn-add-user" onclick="openModal('modal-add-usuario')">
+                        <button class="btn btn-primary" id="btn-add-user" onclick="openAddUserForm()">
                             <i class="fa-solid fa-user-plus"></i> Novo Usuário
                         </button>
                     </div>
@@ -850,38 +850,6 @@
         </div>
     </div>
 
-    <!-- Modal Novo Usuário -->
-    <div class="modal-overlay" id="modal-add-usuario">
-        <div class="modal">
-            <div class="modal-header">
-                <h3>Cadastrar Novo Usuário</h3>
-                <button class="close-btn" onclick="closeModal('modal-add-usuario')"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>E-mail do Usuário</label>
-                    <input type="email" id="user-email" placeholder="usuario@email.com">
-                </div>
-                <div class="form-group">
-                    <label>Senha Provisória</label>
-                    <input type="password" id="user-pass" placeholder="••••••••">
-                </div>
-                <div class="form-group">
-                    <label>Papel / Cargo</label>
-                    <select id="user-role">
-                        <option value="visualizador">Visualizador (Apenas Leitura)</option>
-                        <option value="operador">Operador (Estoque e Serviços)</option>
-                        <option value="gerente">Gerente / Supervisor</option>
-                        <option value="master">Administrador (Master)</option>
-                    </select>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal('modal-add-usuario')">Cancelar</button>
-                <button class="btn btn-primary" onclick="saveUsuario()">Criar Usuário</button>
-            </div>
-        </div>
-    </div>
 
     <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>

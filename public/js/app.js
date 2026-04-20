@@ -1370,25 +1370,52 @@ async function loadUsuarios() {
     } catch (e) { console.error(e); }
 }
 
-async function saveUsuario() {
-    const email = document.getElementById('user-email').value;
-    const password = document.getElementById('user-pass').value;
-    const role = document.getElementById('user-role').value;
-
-    if (!email || !password) return Swal.fire('Erro', 'Preencha todos os campos', 'error');
-
-    try {
-        const res = await apiFetch(`${API_URL}/users`, {
-            method: 'POST',
-            body: JSON.stringify({ email, password, role })
-        });
-        if (res.ok) {
-            Swal.fire('Sucesso', 'Usuário criado com sucesso!', 'success');
-            closeModal('modal-add-usuario');
-            loadUsuarios();
+async function openAddUserForm() {
+    const { value: formValues } = await Swal.fire({
+        title: 'Cadastrar Novo Usuário',
+        html:
+            '<div style="text-align:left;">' +
+            '<label style="display:block; margin-bottom:5px; font-weight:500;">E-mail</label>' +
+            '<input id="swal-email" class="swal2-input" placeholder="usuario@email.com" style="margin-top:0; width:100%; box-sizing:border-box;">' +
+            '<label style="display:block; margin-top:15px; margin-bottom:5px; font-weight:500;">Senha Provisória</label>' +
+            '<input id="swal-pass" type="password" class="swal2-input" placeholder="••••••••" style="margin-top:0; width:100%; box-sizing:border-box;">' +
+            '<label style="display:block; margin-top:15px; margin-bottom:5px; font-weight:500;">Papel / Cargo</label>' +
+            '<select id="swal-role" class="swal2-select" style="margin-top:0; width:100%; box-sizing:border-box;">' +
+            '<option value="visualizador">Visualizador</option>' +
+            '<option value="operador">Operador</option>' +
+            '<option value="gerente">Gerente</option>' +
+            '<option value="master">Master (Admin)</option>' +
+            '</select>' +
+            '</div>',
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: 'Criar Usuário',
+        cancelButtonText: 'Cancelar',
+        preConfirm: () => {
+            const email = document.getElementById('swal-email').value;
+            const password = document.getElementById('swal-pass').value;
+            const role = document.getElementById('swal-role').value;
+            if (!email || !password) {
+                Swal.showValidationMessage('Por favor, preencha E-mail e Senha');
+                return false;
+            }
+            return { email, password, role };
         }
-    } catch (e) {
-        Swal.fire('Erro', e.message, 'error');
+    });
+
+    if (formValues) {
+        try {
+            const res = await apiFetch(`${API_URL}/users`, {
+                method: 'POST',
+                body: JSON.stringify(formValues)
+            });
+            if (res.ok) {
+                Swal.fire('Sucesso', 'Usuário criado com sucesso!', 'success');
+                loadUsuarios();
+            }
+        } catch (e) {
+            Swal.fire('Erro', e.message, 'error');
+        }
     }
 }
 
