@@ -614,7 +614,7 @@ app.get('/api/relatorios/devolucoes', async (req, res) => {
         // Buscar todas as devoluções do histórico
         const { data: history, error } = await supabase
             .from('historico_movimentacoes')
-            .select('equipamento_id, tipo, data, placa, tecnico_id, tecnicos(nome), equipamentos(num_interno, serial, modelo)')
+            .select('equipamento_id, tipo, data, placa, tecnico_id, tecnicos(nome), equipamentos(num_interno, serial, modelo, status)')
             .eq('tipo', 'DEVOLUCAO');
 
         if (error) throw error;
