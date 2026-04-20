@@ -128,6 +128,9 @@ window.closeModal = closeModal;
 // === DASHBOARD ===
 let chartObjStatus = null;
 let chartObjTechs = null;
+let chartObjDevRecurrence = null;
+let chartObjTechReturns = null;
+let chartObjStatusPie = null;
 
 async function loadDashboard() {
     try {
@@ -144,15 +147,18 @@ async function loadDashboard() {
         chartObjStatus = new Chart(ctxStatus, {
             type: 'doughnut',
             data: {
-                labels: ['Disponível', 'Estoque', 'Instalado'],
+                labels: ['Disponível', 'Estoque', 'Instalado', 'Pendente'],
                 datasets: [{
-                    data: [stats.dispEq || 0, stats.techEq || 0, stats.instEq || 0],
-                    backgroundColor: ['#10b981', '#f59e0b', '#8b5cf6'],
+                    data: [stats.dispEq || 0, stats.techEq || 0, stats.instEq || 0, stats.pendEq || 0],
+                    backgroundColor: ['#10b981', '#f59e0b', '#8b5cf6', '#3b82f6'],
                     borderWidth: 0
                 }]
             },
             options: { cutout: '70%', plugins: { legend: { position: 'bottom' } } }
         });
+
+        const pendEl = document.getElementById('stat-pend');
+        if (pendEl) pendEl.innerText = stats.pendEq || 0;
 
         // Render Bar Chart Techs
         const ctxTechs = document.getElementById('chartTechs').getContext('2d');
@@ -1325,12 +1331,21 @@ async function loadRelatorios() {
         if(document.getElementById('rep-total-devolucoes')) document.getElementById('rep-total-devolucoes').innerText = totalDev;
         if(document.getElementById('rep-itens-recorrentes')) document.getElementById('rep-itens-recorrentes').innerText = recurrentCount;
 
-        // Popular Select de Técnicos (Filtro Devoluções)
+        renderRelatorioTable(dataDev);
+        
+        // Novo Dashboard Quantitativo de Devoluções
+        await loadAnalyticsDevolucoes();
+
+        // Popular Select de Técnicos (Filtro Devoluções e Analytics)
         const selTechDev = document.getElementById('filter-rep-tecnico');
-        if(selTechDev) {
+        const selTechAnalytics = document.getElementById('filter-analytics-tecnico');
+        
+        if(selTechDev || selTechAnalytics) {
             const techsDev = [...new Set(dataDev.map(i => i.ultimo_tecnico).filter(t => t !== 'N/A'))].sort();
-            selTechDev.innerHTML = '<option value="">Todos os Técnicos</option>';
-            techsDev.forEach(t => selTechDev.innerHTML += `<option value="${t}">${t}</option>`);
+            const options = '<option value="">Todos os Técnicos</option>' + techsDev.map(t => `<option value="${t}">${t}</option>`).join('');
+            
+            if(selTechDev) selTechDev.innerHTML = options;
+            if(selTechAnalytics) selTechAnalytics.innerHTML = options;
         }
 
         renderRelatorioTable(dataDev);
@@ -1826,36 +1841,118 @@ function filterRelatorioDev() {
 }
 
 function renderRelatorioChart(data) {
-    const canvas = document.getElementById('chart-devolucoes');
-    if(!canvas) return;
-    const ctx = canvas.getContext('2d');
-    
-    // Pegar top 5 mais devolvidos
-    const topData = [...data]
-        .sort((a, b) => b.qtd_devolucoes - a.qtd_devolucoes)
-        .slice(0, 5);
+    // This is now handled by loadAnalyticsDevolucoes for the new dashboard
+}
 
-    if (chartInstance) chartInstance.destroy();
+async function loadAnalyticsDevolucoes() {
+    try {
+        const start = document.getElementById('filter-rep-inicio')?.value;
+        const end = document.getElementById('filter-rep-fim')?.value;
+        const source = document.getElementById('filter-rep-origem')?.value;
+        const techName = document.getElementById('filter-analytics-tecnico')?.value;
 
-    chartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: topData.map(i => i.num_interno || i.serial),
-            datasets: [{
-                label: 'Quantidade de Devoluções',
-                data: topData.map(i => i.qtd_devolucoes),
-                backgroundColor: 'rgba(245, 158, 11, 0.7)',
-                borderColor: 'rgba(245, 158, 11, 1)',
-                borderWidth: 1,
-                borderRadius: 5
-            }]
-        },
-        options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                x: { beginAtZero: true, ticks: { stepSize: 1 } }
+        // Construir query string
+        let params = new URLSearchParams();
+        if (start) params.append('data_inicio', start);
+        if (end) params.append('data_fim', end);
+        if (source) params.append('origem', source);
+        
+        // Se filtrou por nome de técnico no Analytics, precisamos buscar o ID dele ou 
+        // adaptar o backend para aceitar nome. Para manter consistência, vamos passar como param
+        if (techName) params.append('tecnico_nome', techName);
+
+        const resStats = await apiFetch(`${API_URL}/stats/devolucoes?${params.toString()}`);
+        const stats = await resStats.json();
+
+        // 1. Atualizar Counters
+        const totalDevEl = document.getElementById('rep-total-devolucoes');
+        const totalTratEl = document.getElementById('rep-total-tratamentos');
+        const recurEl = document.getElementById('rep-itens-recorrentes');
+        const pendRelEl = document.getElementById('rep-total-pendentes');
+
+        if (totalDevEl) totalDevEl.innerText = stats.totalDevolucoes;
+        if (totalTratEl) totalTratEl.innerText = stats.totalTratamentos;
+        if (recurEl) recurEl.innerText = stats.rankingEquipamentos.filter(e => e.count > 1).length;
+
+        // Buscar total pendente para o card do relatório também
+        const resBase = await apiFetch(`${API_URL}/stats`);
+        const baseStats = await resBase.json();
+        if (pendRelEl) pendRelEl.innerText = baseStats.pendEq || 0;
+
+        // 2. Gráfico de Recorrência (Equipamentos)
+        const ctxRecur = document.getElementById('chart-devolucoes')?.getContext('2d');
+        if (ctxRecur) {
+            if (chartObjDevRecurrence) chartObjDevRecurrence.destroy();
+            chartObjDevRecurrence = new Chart(ctxRecur, {
+                type: 'bar',
+                data: {
+                    labels: stats.rankingEquipamentos.map(e => e.serial),
+                    datasets: [{
+                        label: 'Vezes Devolvido',
+                        data: stats.rankingEquipamentos.map(e => e.count),
+                        backgroundColor: '#f59e0b',
+                        borderRadius: 5
+                    }]
+                },
+                options: { 
+                    indexAxis: 'y', 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        // 3. Gráfico de Técnicos (Ofensores)
+        const ctxTechDev = document.getElementById('chart-tecnicos-devolucoes')?.getContext('2d');
+        if (ctxTechDev) {
+            if (chartObjTechReturns) chartObjTechReturns.destroy();
+            chartObjTechReturns = new Chart(ctxTechDev, {
+                type: 'bar',
+                data: {
+                    labels: stats.rankingTecnicos.map(t => t.nome),
+                    datasets: [{
+                        label: 'Total de Devoluções',
+                        data: stats.rankingTecnicos.map(t => t.count),
+                        backgroundColor: '#ef4444',
+                        borderRadius: 5
+                    }]
+                },
+                options: { 
+                    indexAxis: 'y', 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        // 4. Gráfico Status Pie (Visão Geral Relatório)
+        const ctxPie = document.getElementById('chart-status-pie')?.getContext('2d');
+        if (ctxPie) {
+            if (chartObjStatusPie) chartObjStatusPie.destroy();
+            chartObjStatusPie = new Chart(ctxPie, {
+                type: 'pie',
+                data: {
+                    labels: ['Disponível', 'Pendente', 'Instalado', 'Estoque'],
+                    datasets: [{
+                        data: [baseStats.dispEq, baseStats.pendEq, baseStats.instEq, baseStats.techEq],
+                        backgroundColor: ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'right' } }
+                }
+            });
+        }
+
+    } catch (e) {
+        console.error("Erro ao carregar analytics de devoluções:", e);
+    }
+}
             },
             plugins: {
                 legend: { display: false }

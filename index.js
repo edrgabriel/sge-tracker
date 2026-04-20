@@ -281,6 +281,62 @@ app.post('/api/equipamentos/move', restrictTo('master', 'gerente', 'operador'), 
 });
 
 
+
+// Dashboard Especializado de Devolucoes (Analytics)
+app.get('/api/stats/devolucoes', async (req, res) => {
+    try {
+        const { data: historico, error } = await supabase
+            .from('historico_movimentacoes')
+            .select('equipamento_id, tipo, tecnico_id, equipamentos(serial, modelo), tecnicos(nome)')
+            .in('tipo', ['DEVOLUCAO', 'TRATAMENTO', 'equipamento_devolvido', 'tratamento_concluido']);
+            
+        if (error) return res.status(500).json({ error: error.message });
+
+        let totalDevolucoes = 0;
+        let totalTratamentos = 0;
+        const countEquips = {}; // { equipId: { serial, count } }
+        const countTechs = {}; // { techId: { nome, count } }
+
+        historico.forEach(log => {
+            if (log.tipo === 'equipamento_devolvido' || log.tipo === 'DEVOLUCAO') {
+                totalDevolucoes++;
+                
+                // Agrupar Equipamentos
+                const eId = log.equipamento_id;
+                if (!countEquips[eId]) countEquips[eId] = { serial: log.equipamentos?.serial || 'Desconhecido', modelo: log.equipamentos?.modelo || '-', count: 0 };
+                countEquips[eId].count++;
+                
+                // Agrupar Tecnicos associados a devoluções
+                const tId = log.tecnico_id;
+                if (tId) {
+                    if (!countTechs[tId]) countTechs[tId] = { nome: log.tecnicos?.nome || 'Desconhecido', count: 0 };
+                    countTechs[tId].count++;
+                }
+            }
+            if (log.tipo === 'tratamento_concluido' || log.tipo === 'TRATAMENTO') {
+                totalTratamentos++;
+            }
+        });
+
+        const rankingEquipamentos = Object.values(countEquips)
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10);
+            
+        const rankingTecnicos = Object.values(countTechs)
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10);
+
+        res.json({
+            totalDevolucoes,
+            totalTratamentos,
+            rankingEquipamentos,
+            rankingTecnicos
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // History of distributions
 app.get('/api/distribuicoes', async (req, res) => {
     const { data, error } = await supabase
@@ -697,7 +753,7 @@ app.get('/api/audit', restrictTo('master', 'gerente'), async (req, res) => {
 
 // Dashboard stats
 app.get('/api/stats', async (req, res) => {
-    const stats = { totalEq: 0, dispEq: 0, techEq: 0, instEq: 0, top_techs: [], chart_techs: [], last_services: [] };
+    const stats = { totalEq: 0, dispEq: 0, techEq: 0, instEq: 0, pendEq: 0, top_techs: [], chart_techs: [], last_services: [] };
     
     try {
         const [
@@ -705,6 +761,7 @@ app.get('/api/stats', async (req, res) => {
             { count: dispEq },
             { count: techEq },
             { count: instEq },
+            { count: pendEq },
             { data: techQs },
             { data: srvs }
         ] = await Promise.all([
@@ -712,6 +769,7 @@ app.get('/api/stats', async (req, res) => {
             supabase.from('equipamentos').select('id', { count: 'exact', head: true }).eq('status', 'Disponível').is('deleted_at', null),
             supabase.from('equipamentos').select('id', { count: 'exact', head: true }).eq('status', 'Em Estoque Técnico').is('deleted_at', null),
             supabase.from('equipamentos').select('id', { count: 'exact', head: true }).eq('status', 'Instalado').is('deleted_at', null),
+            supabase.from('equipamentos').select('id', { count: 'exact', head: true }).eq('status', 'Pendente').is('deleted_at', null),
             
             // To get grouping equivalent: Fetch all Em Estoque and group in memory
             supabase.from('equipamentos').select('tecnico_id, tecnicos(nome)').eq('status', 'Em Estoque Técnico').not('tecnico_id', 'is', null).is('deleted_at', null),
@@ -723,6 +781,7 @@ app.get('/api/stats', async (req, res) => {
         stats.dispEq = dispEq || 0;
         stats.techEq = techEq || 0;
         stats.instEq = instEq || 0;
+        stats.pendEq = pendEq || 0;
         
         const tCount = {};
         const tName = {};

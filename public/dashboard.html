@@ -109,13 +109,20 @@
                             </div>
                         </div>
                         <div class="stat-card purple">
-                            <div class="stat-icon"><i class="fa-solid fa-screwdriver-wrench"></i></div>
-                            <div class="stat-info">
-                                <h3>Instalados</h3>
-                                <p id="stat-inst">0</p>
+                                <div class="stat-icon"><i class="fa-solid fa-screwdriver-wrench"></i></div>
+                                <div class="stat-info">
+                                    <h3>Instalados</h3>
+                                    <p id="stat-inst">0</p>
+                                </div>
+                            </div>
+                            <div class="stat-card orange">
+                                <div class="stat-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
+                                <div class="stat-info">
+                                    <h3>Em Tratamento</h3>
+                                    <p id="stat-pend">0</p>
+                                </div>
                             </div>
                         </div>
-                    </div>
 
                     <!-- Dashboard Charts Area -->
                     <div class="charts-container" style="display: flex; gap: 20px; margin-top: 20px;">
@@ -460,12 +467,26 @@
                     </div>
 
                     <!-- DASHBOARD DE DEVOLUÇÕES (NOVO) -->
-                    <div class="stats-grid" style="margin-bottom: 25px;">
+                    <div class="stats-grid" style="margin-bottom: 25px; grid-template-columns: repeat(4, 1fr);">
                         <div class="stat-card orange">
                             <div class="stat-icon"><i class="fa-solid fa-arrow-rotate-left"></i></div>
                             <div class="stat-info">
                                 <h3>Total de Devoluções</h3>
                                 <p id="rep-total-devolucoes">0</p>
+                            </div>
+                        </div>
+                        <div class="stat-card blue">
+                            <div class="stat-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
+                            <div class="stat-info">
+                                <h3>Aguardando Tratamento</h3>
+                                <p id="rep-total-pendentes">0</p>
+                            </div>
+                        </div>
+                        <div class="stat-card green">
+                            <div class="stat-icon"><i class="fa-solid fa-check-double"></i></div>
+                            <div class="stat-info">
+                                <h3>Tratamentos Concluídos</h3>
+                                <p id="rep-total-tratamentos">0</p>
                             </div>
                         </div>
                         <div class="stat-card purple">
@@ -477,23 +498,51 @@
                         </div>
                     </div>
 
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 25px;">
+                        <div class="card">
+                            <h3>Equipamentos Mais Devolvidos (Recorrência)</h3>
+                            <canvas id="chart-devolucoes" style="max-height: 250px;"></canvas>
+                        </div>
+                        <div class="card">
+                            <h3>Técnicos com Mais Devoluções</h3>
+                            <canvas id="chart-tecnicos-devolucoes" style="max-height: 250px;"></canvas>
+                        </div>
+                        <div class="card">
+                            <h3>Distribuição por Status</h3>
+                            <canvas id="chart-status-pie" style="max-height: 250px;"></canvas>
+                        </div>
+                    </div>
+
                     <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 20px; margin-bottom: 25px;">
                         <div class="card">
                             <h3>Equipamentos Mais Devolvidos</h3>
                             <canvas id="chart-devolucoes" style="max-height: 250px;"></canvas>
                         </div>
                         <div class="card">
-                            <h3>Filtros de Devoluções</h3>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px;">
-                                <div class="form-group">
-                                    <label>Filtro por Técnico</label>
-                                    <select id="filter-rep-tecnico" onchange="filterRelatorioDev()">
+                            <h3>Filtros de Dashboard (Analytics)</h3>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+                                <div class="form-group" style="margin:0;">
+                                    <label style="font-size:0.75rem;">De:</label>
+                                    <input type="date" id="filter-rep-inicio" onchange="loadAnalyticsDevolucoes()">
+                                </div>
+                                <div class="form-group" style="margin:0;">
+                                    <label style="font-size:0.75rem;">Até:</label>
+                                    <input type="date" id="filter-rep-fim" onchange="loadAnalyticsDevolucoes()">
+                                </div>
+                                <div class="form-group" style="margin:0;">
+                                    <label style="font-size:0.75rem;">Técnico</label>
+                                    <select id="filter-analytics-tecnico" onchange="loadAnalyticsDevolucoes()">
                                         <option value="">Todos</option>
                                     </select>
                                 </div>
-                                <div class="form-group">
-                                    <label>Busca Serial/Nº</label>
-                                    <input type="text" id="filter-rep-search" oninput="filterRelatorioDev()" placeholder="Ex: SN123...">
+                                <div class="form-group" style="margin:0;">
+                                    <label style="font-size:0.75rem;">Origem</label>
+                                    <select id="filter-rep-origem" onchange="loadAnalyticsDevolucoes()">
+                                        <option value="">Todas</option>
+                                        <option value="servico_operacional">Serviço / O.S.</option>
+                                        <option value="movimentacao_manual">Movimentação Manual</option>
+                                        <option value="recolhimento_em_massa">Recolhimento em Massa</option>
+                                    </select>
                                 </div>
                             </div>
                             <div style="margin-top: 15px; max-height: 150px; overflow-y: auto;">
