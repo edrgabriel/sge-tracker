@@ -1295,24 +1295,55 @@ async function saveConfigToDB(chave, arrayData, renderCallback) {
 }
 
 // === RELATÓRIOS ===
+let allRelatorioData = [];
+let chartInstance = null;
+
 async function loadRelatorios() {
-    // Populate dropdowns for History filter
     try {
+        // 1. Carregar Dados de Ciclo de Vida (Dashboard Analytics)
+        const resDev = await apiFetch(`${API_URL}/relatorios/devolucoes`);
+        const dataDev = await resDev.json();
+        allRelatorioData = dataDev;
+
+        // Preencher counters do Dashboard
+        const totalDev = dataDev.reduce((acc, curr) => acc + curr.qtd_devolucoes, 0);
+        const recurrentCount = dataDev.filter(i => i.qtd_devolucoes > 1).length;
+        if(document.getElementById('rep-total-devolucoes')) document.getElementById('rep-total-devolucoes').innerText = totalDev;
+        if(document.getElementById('rep-itens-recorrentes')) document.getElementById('rep-itens-recorrentes').innerText = recurrentCount;
+
+        // Popular Select de Técnicos (Filtro Devoluções)
+        const selTechDev = document.getElementById('filter-rep-tecnico');
+        if(selTechDev) {
+            const techsDev = [...new Set(dataDev.map(i => i.ultimo_tecnico).filter(t => t !== 'N/A'))].sort();
+            selTechDev.innerHTML = '<option value="">Todos os Técnicos</option>';
+            techsDev.forEach(t => selTechDev.innerHTML += `<option value="${t}">${t}</option>`);
+        }
+
+        renderRelatorioTable(dataDev);
+        renderRelatorioChart(dataDev);
+
+        // 2. Carregar Dropdowns para Histórico de Serviços (Relatórios de Gestão)
         const rTec = await apiFetch(`${API_URL}/tecnicos`);
         const tecs = await rTec.json();
         const tSel = document.getElementById('rel_srv_tec');
-        tSel.innerHTML = '<option value="">-- Todos Técnicos --</option>';
-        tecs.forEach(t => tSel.innerHTML += `<option value="${t.id}">${t.nome}</option>`);
+        if(tSel) {
+            tSel.innerHTML = '<option value="">-- Todos Técnicos --</option>';
+            tecs.forEach(t => tSel.innerHTML += `<option value="${t.id}">${t.nome}</option>`);
+        }
 
         const cRes = await apiFetch(`${API_URL}/configuracoes`);
         const confs = await cRes.json();
         const tServ = confs.find(c => c.chave === 'tipos_servico');
         const sSel = document.getElementById('rel_srv_tipo');
-        sSel.innerHTML = '<option value="">-- Todos os Tipos --</option>';
-        if(tServ) {
-            JSON.parse(tServ.valor).forEach(t => sSel.innerHTML += `<option value="${t}">${t}</option>`);
+        if(sSel) {
+            sSel.innerHTML = '<option value="">-- Todos os Tipos --</option>';
+            if(tServ) {
+                JSON.parse(tServ.valor).forEach(t => sSel.innerHTML += `<option value="${t}">${t}</option>`);
+            }
         }
-    } catch(e) { console.error(e); }
+    } catch(e) { 
+        console.error("Erro ao carregar relatórios:", e);
+    }
 }
 
 function processGenericReport(title, headers, rows, isExcel, excelName) {
@@ -1435,24 +1466,41 @@ async function relatorioSrvHist(isExcel) {
     const res = await apiFetch(`${API_URL}/servicos`);
     const srvs = await res.json();
     
+    // Filtro aprimorado
     const filtered = srvs.filter(s => {
-        let f1=true, f2=true, f3=true, f4=true;
-        if(dI) f1 = new Date(s.data) >= new Date(dI);
-        if(dF) f2 = new Date(s.data) <= new Date(dF + 'T23:59:59');
-        if(tId) f3 = String(s.tecnico_id) === String(tId);
-        if(tipo) f4 = s.tipo_servico === tipo;
-        return f1 && f2 && f3 && f4;
+        let matchDate = true;
+        let matchTec = true;
+        let matchTipo = true;
+
+        if (dI) {
+            const start = new Date(dI);
+            start.setHours(0,0,0,0);
+            matchDate = matchDate && new Date(s.data) >= start;
+        }
+        if (dF) {
+            const end = new Date(dF);
+            end.setHours(23,59,59,999);
+            matchDate = matchDate && new Date(s.data) <= end;
+        }
+        if (tId) {
+            matchTec = String(s.tecnico_id) === String(tId);
+        }
+        if (tipo) {
+            matchTipo = s.tipo_servico === tipo;
+        }
+        return matchDate && matchTec && matchTipo;
     });
 
-    const headers = ['Data', 'Técnico', 'Tipo Serviço', 'Nº Interno', 'Serial'];
+    const headers = ['Data', 'Técnico', 'Tipo Serviço', 'Nº Interno', 'Serial', 'Placa/Obs'];
     const rows = filtered.map(s => [
-        new Date(s.data).toLocaleString(),
+        new Date(s.data).toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}),
         s.tecnico_nome,
         s.tipo_servico,
-        s.num_interno,
-        s.serial
+        s.num_interno || '-',
+        s.serial || '-',
+        s.placa_obs || '-'
     ]);
-    
+
     processGenericReport(`Serviços (${filtered.length} reg)`, headers, rows, isExcel, 'Historico_Servicos');
 }
 
@@ -1689,38 +1737,10 @@ function viewLogDetail(log) {
         width: '600px'
     });
 }
-// === RELATÓRIOS E ANALYTICS ===
-let allRelatorioData = [];
-let chartInstance = null;
-
-async function loadRelatorios() {
-    try {
-        const res = await apiFetch(`${API_URL}/relatorios/devolucoes`);
-        const data = await res.json();
-        allRelatorioData = data;
-
-        // Preencher counters
-        const totalDev = data.reduce((acc, curr) => acc + curr.qtd_devolucoes, 0);
-        const recurrentCount = data.filter(i => i.qtd_devolucoes > 1).length;
-
-        document.getElementById('rep-total-devolucoes').innerText = totalDev;
-        document.getElementById('rep-itens-recorrentes').innerText = recurrentCount;
-
-        // Popular Select de Técnicos para filtro
-        const selTech = document.getElementById('filter-rep-tecnico');
-        const techs = [...new Set(data.map(i => i.ultimo_tecnico).filter(t => t !== 'N/A'))].sort();
-        selTech.innerHTML = '<option value="">Todos os Técnicos</option>';
-        techs.forEach(t => selTech.innerHTML += `<option value="${t}">${t}</option>`);
-
-        renderRelatorioTable(data);
-        renderRelatorioChart(data);
-    } catch (e) {
-        console.error(e);
-    }
-}
 
 function renderRelatorioTable(data) {
     const tbody = document.getElementById('tbody-relatorio-devolucoes');
+    if(!tbody) return;
     tbody.innerHTML = '';
 
     data.sort((a, b) => b.qtd_devolucoes - a.qtd_devolucoes).forEach(row => {
@@ -1762,7 +1782,9 @@ function filterRelatorioDev() {
 }
 
 function renderRelatorioChart(data) {
-    const ctx = document.getElementById('chart-devolucoes').getContext('2d');
+    const canvas = document.getElementById('chart-devolucoes');
+    if(!canvas) return;
+    const ctx = canvas.getContext('2d');
     
     // Pegar top 5 mais devolvidos
     const topData = [...data]
