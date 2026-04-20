@@ -10,6 +10,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.location.href = 'index.html';
         }
     } else {
+        // Obter papel (role) do usuário logado
+        await syncUserRole(session.access_token);
+
         if (currentPage.includes('index.html') || currentPage.endsWith('/') || currentPage === '') {
             window.location.href = 'dashboard.html';
         }
@@ -64,6 +67,10 @@ async function handleLogin(e) {
             text: error.message,
             customClass: { popup: 'premium-swal' }
         });
+    } else {
+        // Forçar sincronização de role logo após o login
+        await syncUserRole(data.session.access_token);
+        window.location.href = 'dashboard.html';
     }
 }
 
@@ -144,8 +151,59 @@ async function handleResetPassword() {
     }
 }
 
+async function syncUserRole(token) {
+    console.log('Iniciando sincronização de cargo...');
+    try {
+        const res = await fetch('/api/me', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            console.log('Cargo recebido do servidor:', data.role);
+            localStorage.setItem('stoki_role', data.role);
+            localStorage.setItem('stoki_email', data.email);
+            
+            // Dispatch event to notify app.js that auth is ready
+            window.dispatchEvent(new CustomEvent('stokiAuthReady', { detail: data }));
+        } else {
+            console.error('Falha na resposta do servidor /api/me:', res.status);
+        }
+    } catch (e) {
+        console.error('Erro ao sincronizar papel do usuário:', e);
+    }
+}
+
+// Utilitário global para Fetch autenticado
+async function apiFetch(endpoint, options = {}) {
+    const { data: { session } } = await window.supabaseClient.auth.getSession();
+    if (!session) {
+        window.location.href = 'index.html';
+        return;
+    }
+
+    const headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json'
+    };
+
+    const response = await fetch(endpoint, { ...options, headers });
+    
+    if (response.status === 401 || response.status === 403) {
+        const err = await response.json();
+        Swal.fire('Acesso Negado', err.error || 'Você não tem permissão', 'error');
+        if (response.status === 401) window.location.href = 'index.html';
+        throw new Error(err.error);
+    }
+
+    return response;
+}
+
 async function handleLogout() {
     await window.supabaseClient.auth.signOut();
+    localStorage.removeItem('stoki_role');
+    localStorage.removeItem('stoki_email');
+    window.location.href = 'index.html';
 }
 
 function toggleAuthMode(mode) {
@@ -166,3 +224,4 @@ window.handleRegister = handleRegister;
 window.handleResetPassword = handleResetPassword;
 window.handleLogout = handleLogout;
 window.toggleAuthMode = toggleAuthMode;
+window.apiFetch = apiFetch;

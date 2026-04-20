@@ -1,5 +1,50 @@
 const API_URL = '/api';
 
+// === PERMISSIONS ===
+function applyPermissions() {
+    const role = localStorage.getItem('stoki_role') || 'visualizador';
+    const email = localStorage.getItem('stoki_email') || 'Usuário';
+
+    const emailEl = document.getElementById('user-display-email');
+    const roleEl = document.getElementById('user-display-role');
+    if (emailEl) emailEl.innerText = email;
+    if (roleEl) roleEl.innerText = role;
+
+    // Sidebar Tabs
+    const navUsers = document.getElementById('nav-usuarios');
+    const navLogs = document.getElementById('nav-logs');
+
+    if (role === 'master') {
+        if (navUsers) navUsers.style.setProperty('display', 'flex', 'important');
+        if (navLogs) navLogs.style.display = 'flex';
+    } else if (role === 'gerente') {
+        if (navLogs) navLogs.style.display = 'flex';
+    }
+
+    // Ocultar botões baseado no cargo (Lógica global)
+    if (role === 'visualizador') {
+        document.querySelectorAll('.btn-primary, .fab-container').forEach(el => {
+            const txt = el.innerText.toLowerCase();
+            const exceptions = ['exportar', 'baixar', 'relatório', 'gerar'];
+            const shouldHide = !exceptions.some(ex => txt.includes(ex));
+            if (shouldHide) el.style.display = 'none';
+        });
+    }
+
+    if (role === 'operador') {
+        document.querySelectorAll('[data-target="configuracoes"]').forEach(el => el.style.display = 'none');
+    }
+}
+
+function hasPermission(action) {
+    const role = localStorage.getItem('stoki_role');
+    if (role === 'master') return true;
+    if (action === 'delete') return false; 
+    if (role === 'gerente') return ['create', 'edit', 'move', 'report'].includes(action);
+    if (role === 'operador') return ['move', 'create_service'].includes(action);
+    return false;
+}
+
 // === VIEW NAVIGATION ===
 document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
     item.addEventListener('click', (e) => {
@@ -17,6 +62,7 @@ document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
         
         // Load respective data
         loadViewData(target);
+        applyPermissions(); // Re-apply to ensure inner buttons are hidden/shown
     });
 });
 
@@ -32,25 +78,63 @@ function loadViewData(view) {
     if (view === 'configuracoes') loadConfiguracoes();
     if (view === 'relatorios') loadRelatorios();
     if (view === 'templates') { /* static view */ }
+    if (view === 'usuarios') loadUsuarios();
+    if (view === 'logs') loadLogs();
 }
 
 // === ON LOAD ===
 document.addEventListener('DOMContentLoaded', () => {
-    loadDashboard();
-    loadConfiguracoes();
+    // Escutar a sincronização do Auth (vindo do auth.js)
+    window.addEventListener('stokiAuthReady', () => {
+        console.log('Auth pronto capturado no app.js, aplicando permissões...');
+        loadDashboard();
+        loadConfiguracoes();
+        applyPermissions();
+    });
+
+    // Fallback caso já esteja no localStorage (evita delay se já temos os dados)
+    if (localStorage.getItem('stoki_role')) {
+        loadDashboard();
+        loadConfiguracoes();
+        applyPermissions();
+    }
 });
 
 // === MODAL HELPERS ===
-function openModal(id) { document.getElementById(id).classList.add('active'); }
-function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+function openModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+        console.log(`Abrindo modal: ${id}`);
+        modal.classList.add('active');
+        setTimeout(() => {
+            console.log(`Estilo computado do modal ${id}:`, window.getComputedStyle(modal).display);
+        }, 50);
+    } else {
+        console.error(`Erro: Modal com ID "${id}" não encontrado!`);
+    }
+}
+
+function closeModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+        modal.classList.remove('active');
+    }
+}
+
+// Bind to window to ensure HTML onclick can always find them
+window.openModal = openModal;
+window.closeModal = closeModal;
 
 // === DASHBOARD ===
 let chartObjStatus = null;
 let chartObjTechs = null;
+let chartObjDevRecurrence = null;
+let chartObjTechReturns = null;
+let chartObjStatusPie = null;
 
 async function loadDashboard() {
     try {
-        const res = await fetch(`${API_URL}/stats`);
+        const res = await apiFetch(`${API_URL}/stats`);
         const stats = await res.json();
         document.getElementById('stat-total').innerText = stats.totalEq || 0;
         document.getElementById('stat-disp').innerText = stats.dispEq || 0;
@@ -63,15 +147,18 @@ async function loadDashboard() {
         chartObjStatus = new Chart(ctxStatus, {
             type: 'doughnut',
             data: {
-                labels: ['Disponível', 'Estoque', 'Instalado'],
+                labels: ['Disponível', 'Estoque', 'Instalado', 'Pendente'],
                 datasets: [{
-                    data: [stats.dispEq || 0, stats.techEq || 0, stats.instEq || 0],
-                    backgroundColor: ['#10b981', '#f59e0b', '#8b5cf6'],
+                    data: [stats.dispEq || 0, stats.techEq || 0, stats.instEq || 0, stats.pendEq || 0],
+                    backgroundColor: ['#10b981', '#f59e0b', '#8b5cf6', '#3b82f6'],
                     borderWidth: 0
                 }]
             },
             options: { cutout: '70%', plugins: { legend: { position: 'bottom' } } }
         });
+
+        const pendEl = document.getElementById('stat-pend');
+        if (pendEl) pendEl.innerText = stats.pendEq || 0;
 
         // Render Bar Chart Techs
         const ctxTechs = document.getElementById('chartTechs').getContext('2d');
@@ -125,15 +212,20 @@ function switchEquipTab(tab) {
     document.querySelectorAll('#view-equipamentos .tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('#view-equipamentos .tab-content').forEach(c => c.style.display = 'none');
     
-    event.target.classList.add('active');
-    document.getElementById(`equip-tab-${tab}`).style.display = 'block';
+    // Encontrar o botão clicado
+    if (event && event.target) {
+        event.target.classList.add('active');
+    }
     
-    if(tab === 'lista') loadEquipamentos();
+    const targetEl = document.getElementById(`equip-tab-${tab}`);
+    if (targetEl) targetEl.style.display = 'block';
+    
+    if (tab === 'lista' || tab === 'devolvidos') loadEquipamentos();
 }
 
 async function loadEquipamentos() {
     try {
-        const res = await fetch(`${API_URL}/equipamentos`);
+        const res = await apiFetch(`${API_URL}/equipamentos`);
         allEquipamentos = await res.json();
         filterEquipamentos();
     } catch(e) { console.error(e); }
@@ -145,7 +237,9 @@ function filterEquipamentos() {
     const fSer = document.getElementById('filter-eq-ser').value.toLowerCase();
     const fTec = document.getElementById('filter-eq-tec').value.toLowerCase();
 
-    const filtered = allEquipamentos.filter(eq => {
+    // 1. Renderizar Lista Geral (Estoque Geral)
+    const filteredLista = allEquipamentos.filter(eq => {
+        if (eq.status === 'Pendente') return false; // Não mostrar na lista geral
         const matchStatus = fStatus ? eq.status.toLowerCase().includes(fStatus) : true;
         const matchNum = fNum ? eq.num_interno.toLowerCase().includes(fNum) : true;
         const matchSer = fSer ? eq.serial.toLowerCase().includes(fSer) : true;
@@ -154,25 +248,75 @@ function filterEquipamentos() {
     });
 
     const tbody = document.getElementById('tbody-equipamentos');
-    tbody.innerHTML = '';
-    filtered.forEach(eq => {
-        let statusClass = 'disponivel';
-        if (eq.status === 'Em Estoque Técnico') statusClass = 'estoque';
-        if (eq.status === 'Instalado') statusClass = 'instalado';
-        
-        let dDate = eq.data_distribuicao ? new Date(eq.data_distribuicao).toLocaleDateString('pt-BR') : '-';
+    if (tbody) {
+        tbody.innerHTML = '';
+        filteredLista.forEach(eq => {
+            const canEdit = hasPermission('edit');
+            const canDelete = hasPermission('delete');
+            let statusClass = getStatusClass(eq.status);
+            let dDate = eq.data_distribuicao ? new Date(eq.data_distribuicao).toLocaleDateString('pt-BR') : '-';
 
-        tbody.innerHTML += `
-            <tr>
-                <td><strong>${eq.num_interno}</strong></td>
-                <td>${eq.modelo || '-'}</td>
-                <td>${eq.serial}</td>
-                <td><span class="status-badge ${statusClass}">${eq.status}</span></td>
-                <td>${eq.tecnico_nome || '-'}</td>
-                <td>${dDate}</td>
-            </tr>
-        `;
-    });
+            tbody.innerHTML += `
+                <tr>
+                    <td><strong>${eq.num_interno}</strong></td>
+                    <td>${eq.modelo || '-'}</td>
+                    <td>${eq.serial}</td>
+                    <td><span class="status-badge ${statusClass}">${eq.status}</span></td>
+                    <td>${eq.tecnico_nome || '-'}</td>
+                    <td>${dDate}</td>
+                    <td>
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem;" onclick="verHistorico('${eq.id}')" title="Ver Histórico">
+                                <i class="fa-solid fa-clock-rotate-left"></i>
+                            </button>
+                            ${canEdit ? `
+                            <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem;" onclick="editEquipamento(${eq.id})" title="Editar">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </button>` : ''}
+                            ${canDelete ? `
+                            <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem; color:var(--danger);" onclick="deleteEquipamento(${eq.id})" title="Excluir">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    // 2. Renderizar Lista de Devolvidos (Pendentes)
+    const pendingList = allEquipamentos.filter(eq => eq.status === 'Pendente');
+    const tbodyDev = document.getElementById('tbody-devolvidos');
+    const bulkActions = document.getElementById('bulk-treatment-actions');
+    
+    if (tbodyDev) {
+        tbodyDev.innerHTML = '';
+        if (bulkActions) bulkActions.style.display = pendingList.length > 0 ? 'block' : 'none';
+
+        pendingList.forEach(eq => {
+            const rDate = eq.data_retorno ? new Date(eq.data_retorno).toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '-';
+            tbodyDev.innerHTML += `
+                <tr>
+                    <td><input type="checkbox" class="check-devolvido" value="${eq.id}"></td>
+                    <td><strong>${eq.num_interno}</strong></td>
+                    <td>${eq.serial}</td>
+                    <td><span style="color:var(--primary); font-weight:500;">${eq.tecnico_anterior_nome || '-'}</span></td>
+                    <td><span style="font-family:monospace; background:#eee; padding:2px 5px; border-radius:3px;">${eq.ultima_placa || '-'}</span></td>
+                    <td>${rDate}</td>
+                    <td>
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn btn-primary" style="padding:4px 8px; font-size:0.8rem;" onclick="tratarEquipamento('${eq.id}')" title="Tratamento Concluído">
+                                <i class="fa-solid fa-check"></i>
+                            </button>
+                            <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem;" onclick="verHistorico('${eq.id}')" title="Linha do Tempo">
+                                <i class="fa-solid fa-clock-rotate-left"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+    }
 }
 
 async function saveEquipamento() {
@@ -184,7 +328,7 @@ async function saveEquipamento() {
     if(num.length > 5) return Swal.fire('Atenção', 'O Número Interno deve ter no máximo 5 dígitos!', 'warning');
     
     try {
-        const res = await fetch(`${API_URL}/equipamentos`, {
+        const res = await apiFetch(`${API_URL}/equipamentos`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ num_interno: num, serial: serial, status: 'Disponível', modelo: modelo })
@@ -198,9 +342,229 @@ async function saveEquipamento() {
             });
         } else {
             const err = await res.json();
-            Swal.fire('Erro', err.error || 'Falha ao salvar', 'error');
+            Swal.fire('Erro', err.error || err.message || 'Falha ao salvar', 'error');
         }
     } catch(e) { console.error(e); }
+}
+
+function editEquipamento(id) {
+    const eq = allEquipamentos.find(e => e.id === id);
+    if (!eq) return;
+
+    document.getElementById('edit-eq-id').value = eq.id;
+    document.getElementById('edit-eq-num').value = eq.num_interno;
+    document.getElementById('edit-eq-serial').value = eq.serial;
+    document.getElementById('edit-eq-modelo-list').value = eq.modelo || '';
+
+    openModal('modal-edit-equipamento');
+}
+
+async function updateEquipamento() {
+    const id = document.getElementById('edit-eq-id').value;
+    const num = document.getElementById('edit-eq-num').value.trim();
+    const serial = document.getElementById('edit-eq-serial').value.trim();
+    const modelo = document.getElementById('edit-eq-modelo-list').value;
+
+    if (!num || !serial) return Swal.fire('Atenção', 'Preencha Número Interno e Serial!', 'warning');
+
+    try {
+        const res = await apiFetch(`${API_URL}/equipamentos/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ num_interno: num, serial: serial, modelo: modelo })
+        });
+
+        if (res.ok) {
+            Swal.fire('Sucesso', 'Equipamento atualizado!', 'success');
+            closeModal('modal-edit-equipamento');
+            loadEquipamentos();
+        } else {
+            const err = await res.json();
+            Swal.fire('Erro', err.error || 'Falha ao atualizar', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Erro', 'Erro de conexão.', 'error');
+    }
+}
+
+async function deleteEquipamento(id) {
+    const result = await Swal.fire({
+        title: 'Tem certeza?',
+        text: "Esta ação não pode ser revertida!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Sim, excluir!',
+        cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const res = await apiFetch(`${API_URL}/equipamentos/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                Swal.fire('Deletado!', 'Equipamento excluído com sucesso.', 'success');
+                loadEquipamentos();
+            } else {
+                const err = await res.json();
+                Swal.fire('Erro', err.error || 'Falha ao excluir', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Erro', 'Erro de conexão.', 'error');
+        }
+    }
+}
+
+// === TRATAMENTO E HISTÓRICO ===
+
+function toggleAllDevolvidos() {
+    const mainCheck = document.getElementById('check-all-devolvidos');
+    const checks = document.querySelectorAll('.check-devolvido');
+    checks.forEach(c => c.checked = mainCheck.checked);
+}
+
+async function tratarEquipamento(id) {
+    const result = await Swal.fire({
+        title: 'Confirmar Tratamento?',
+        text: "O equipamento voltará para o Estoque Disponível.",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Sim, concluir tratamento',
+        cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const res = await apiFetch(`${API_URL}/equipamentos/tratar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: [id] })
+            });
+
+            if (res.ok) {
+                Swal.fire('Sucesso', 'Equipamento disponível novamente.', 'success');
+                loadEquipamentos();
+            } else {
+                const err = await res.json();
+                Swal.fire('Erro', err.error || 'Falha no tratamento', 'error');
+            }
+        } catch (e) { console.error(e); }
+    }
+}
+
+async function bulkTratarEquipamentos() {
+    const ids = Array.from(document.querySelectorAll('.check-devolvido:checked')).map(c => c.value);
+    if (ids.length === 0) return Swal.fire('Atenção', 'Selecione pelo menos um equipamento!', 'warning');
+
+    const result = await Swal.fire({
+        title: `Tratar ${ids.length} Equipamentos?`,
+        text: "Eles serão retornados ao Estoque Disponível em lote.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sim, tratar todos',
+        cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const res = await apiFetch(`${API_URL}/equipamentos/tratar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids })
+            });
+
+            if (res.ok) {
+                Swal.fire('Sucesso', 'Equipamentos tratados com sucesso!', 'success');
+                loadEquipamentos();
+            } else {
+                const err = await res.json();
+                Swal.fire('Erro', err.error || 'Falha no tratamento em lote', 'error');
+            }
+        } catch (e) { console.error(e); }
+    }
+}
+
+async function verHistorico(id) {
+    try {
+        const res = await apiFetch(`${API_URL}/equipamentos/${id}/historico`);
+        if (!res.ok) throw new Error('Falha ao buscar histórico');
+        const history = await res.json();
+        
+        let eq = allEquipamentos.find(e => e.id == id);
+        
+        // Se o equipamento não estiver na lista global (ex: vindo de relatórios), tentamos extrair o básico do histórico
+        let num_interno = eq?.num_interno || '-';
+        let serial = eq?.serial || '-';
+        let modelo = eq?.modelo || '-';
+        let status = eq?.status || 'Não identificado';
+
+        if (!eq && history.length > 0) {
+            // Tentar pegar do registro do histórico (num_interno/serial/modelo podem estar nos joins se index.js retornasse)
+            // Como index.js /historico retorna apenas log + tecnicos(nome), vamos usar o que temos.
+            // Para ser 100%, o ideal seria index.js no /historico também trazer dados do equipamento se ele existir.
+        }
+
+        // Header do Modal
+        const headerInfo = document.getElementById('hist-tracker-info');
+        if(headerInfo) {
+            headerInfo.innerHTML = `
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <div><strong>Nº Interno:</strong> ${num_interno}</div>
+                    <div><strong>Serial:</strong> ${serial}</div>
+                    <div><strong>Modelo:</strong> ${modelo}</div>
+                    <div><strong>Status Atual:</strong> <span class="status-badge ${getStatusClass(status)}">${status}</span></div>
+                </div>
+            `;
+        }
+
+        // Timeline
+        const timeline = document.getElementById('timeline-movimentacao');
+        timeline.innerHTML = '';
+
+        if (history.length === 0) {
+            timeline.innerHTML = '<p style="text-align:center; color:var(--text-muted); padding:20px;">Nenhum registro encontrado para este equipamento.</p>';
+        } else {
+            history.forEach(item => {
+                const dateStr = new Date(item.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                
+                let icon = 'fa-circle-dot';
+                let color = '#ccc';
+                let label = item.tipo;
+
+                if (item.tipo === 'INSTALACAO') { icon = 'fa-truck-field'; color = '#8b5cf6'; label = 'Instalado em Veículo'; }
+                if (item.tipo === 'DEVOLUCAO') { icon = 'fa-arrow-rotate-left'; color = '#f59e0b'; label = 'Devolvido / Recolhido'; }
+                if (item.tipo === 'TRATAMENTO') { icon = 'fa-screwdriver-wrench'; color = '#10b981'; label = 'Tratamento Concluído'; }
+                if (item.tipo === 'CADASTRADO') { icon = 'fa-plus'; color = '#3b82f6'; label = 'Cadastrado no Sistema'; }
+
+                timeline.innerHTML += `
+                    <div style="display:flex; gap:15px; margin-bottom:20px; position:relative;">
+                        <div style="flex-shrink:0; width:40px; height:40px; border-radius:50%; background:${color}22; color:${color}; display:flex; align-items:center; justify-content:center; border:1px solid ${color}44;">
+                            <i class="fa-solid ${icon}"></i>
+                        </div>
+                        <div style="flex-grow:1; border-bottom:1px solid #eee; padding-bottom:10px;">
+                            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                                <strong style="color:var(--text-main);">${label}</strong>
+                                <span style="font-size:0.8rem; color:var(--text-muted);">${dateStr}</span>
+                            </div>
+                            <div style="font-size:0.9rem; color:var(--text-muted);">
+                                ${item.placa ? `<div><i class="fa-solid fa-car-rear"></i> Placa: <strong>${item.placa}</strong></div>` : ''}
+                                ${item.tecnico_nome && item.tecnico_nome !== 'N/A' ? `<div><i class="fa-solid fa-user-gear"></i> Técnico: <strong>${item.tecnico_nome}</strong></div>` : ''}
+                                ${item.user_email ? `<div style="font-size:0.75rem; margin-top:5px; font-style:italic;">Realizado por: ${item.user_email}</div>` : ''}
+                                ${item.observacao ? `<div style="margin-top:5px; padding:5px; background:#f0f4f8; border-radius:4px; font-size:0.85rem;">"${item.observacao}"</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        openModal('modal-historico');
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Erro', 'Não foi possível carregar o histórico.', 'error');
+    }
 }
 
 // === EXCEL MULTIPLE UPLOAD PREVIEW ===
@@ -284,7 +648,7 @@ async function confirmarUploadLote() {
 
     document.getElementById('btn-confirma-upload').disabled = true;
     try {
-        const res = await fetch(`${API_URL}/equipamentos/bulk`, {
+        const res = await apiFetch(`${API_URL}/equipamentos/bulk`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(pendingExcelPayload)
@@ -308,7 +672,7 @@ async function confirmarUploadLote() {
 // === TÉCNICOS ===
 async function loadTecnicos() {
     try {
-        const res = await fetch(`${API_URL}/tecnicos`);
+        const res = await apiFetch(`${API_URL}/tecnicos`);
         const data = await res.json();
         const tbody = document.getElementById('tbody-tecnicos');
         tbody.innerHTML = '';
@@ -321,20 +685,33 @@ async function loadTecnicos() {
                 ).join('');
             }
             
-            tbody.innerHTML += `
-                <tr>
-                    <td>${t.id}</td>
-                    <td><strong>${t.nome}</strong></td>
-                    <td>${t.cidade_principal}</td>
-                    <td>${subHTML}</td>
-                    <td><span class="status-badge estoque" style="font-size:0.9rem">${t.qtd_estoque || 0}</span></td>
-                    <td>
-                        <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem;" onclick="verEstoqueTecnico(${t.id}, '${t.nome}', '${t.cidade_principal}', '${t.sub_cidades || ''}')">
-                            <i class="fa-solid fa-box-open"></i> Ver Estoque
-                        </button>
-                    </td>
-                </tr>
-            `;
+                const canEdit = hasPermission('edit');
+                const canDelete = hasPermission('delete');
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${t.id}</td>
+                        <td><strong>${t.nome}</strong></td>
+                        <td>${t.cidade_principal}</td>
+                        <td>${subHTML}</td>
+                        <td><span class="status-badge estoque" style="font-size:0.9rem">${t.qtd_estoque || 0}</span></td>
+                        <td>
+                            <div style="display:flex; gap:8px;">
+                                <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem;" onclick="verEstoqueTecnico(${t.id}, '${t.nome}', '${t.cidade_principal}', '${t.sub_cidades || ''}')">
+                                    <i class="fa-solid fa-box-open"></i> Ver
+                                </button>
+                                ${canEdit ? `
+                                <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem;" onclick="editTecnico(${t.id}, '${t.nome}', '${t.cidade_principal}', '${t.sub_cidades || ''}')" title="Editar">
+                                    <i class="fa-solid fa-pen-to-square"></i>
+                                </button>` : ''}
+                                ${canDelete ? `
+                                <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem; color:var(--danger);" onclick="deleteTecnico(${t.id})" title="Excluir">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
         });
     } catch(e) { console.error(e); }
 }
@@ -351,7 +728,7 @@ async function verEstoqueTecnico(id, nome, cidade, subcidades) {
     openModal('modal-ver-estoque');
     
     try {
-        const res = await fetch(`${API_URL}/equipamentos`);
+        const res = await apiFetch(`${API_URL}/equipamentos`);
         const eqs = await res.json();
         const myEqs = eqs.filter(e => e.tecnico_id === id && e.status === 'Em Estoque Técnico');
         
@@ -382,7 +759,7 @@ async function saveTecnico() {
     if(!nome || !cid) return Swal.fire('Atenção', 'Nome e Cidade são obrigatórios!', 'warning');
     
     try {
-        const res = await fetch(`${API_URL}/tecnicos`, {
+        const res = await apiFetch(`${API_URL}/tecnicos`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ nome, cidade_principal: cid, sub_cidades: sub })
@@ -393,16 +770,83 @@ async function saveTecnico() {
             closeModal('modal-add-tecnico');
             loadTecnicos();
         } else {
-            Swal.fire('Erro', 'Falha ao salvar', 'error');
+            const err = await res.json();
+            Swal.fire('Erro', err.error || err.message || 'Falha ao salvar', 'error');
         }
     } catch(e) { console.error(e); }
+}
+
+function editTecnico(id, nome, cidade, sub) {
+    document.getElementById('edit-tec-id').value = id;
+    document.getElementById('edit-tec-nome').value = nome;
+    document.getElementById('edit-tec-cidade').value = cidade;
+    document.getElementById('edit-tec-sub').value = sub;
+    openModal('modal-edit-tecnico');
+}
+
+async function updateTecnico() {
+    const id = document.getElementById('edit-tec-id').value;
+    const nome = document.getElementById('edit-tec-nome').value;
+    const cid = document.getElementById('edit-tec-cidade').value;
+    const sub = document.getElementById('edit-tec-sub').value;
+
+    if (!nome || !cid) return Swal.fire('Atenção', 'Nome e Cidade são obrigatórios!', 'warning');
+
+    try {
+        const res = await apiFetch(`${API_URL}/tecnicos/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nome, cidade_principal: cid, sub_cidades: sub })
+        });
+
+        if (res.ok) {
+            Swal.fire('Sucesso', 'Técnico atualizado!', 'success');
+            closeModal('modal-edit-tecnico');
+            loadTecnicos();
+        } else {
+            const err = await res.json();
+            Swal.fire('Erro', err.error || 'Falha ao atualizar', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Erro', 'Erro de conexão.', 'error');
+    }
+}
+
+async function deleteTecnico(id) {
+    const result = await Swal.fire({
+        title: 'Tem certeza?',
+        text: "Esta ação não pode ser revertida e só funcionará se o técnico não tiver estoque!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Sim, excluir!',
+        cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const res = await apiFetch(`${API_URL}/tecnicos/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                Swal.fire('Deletado!', 'Técnico excluído com sucesso.', 'success');
+                loadTecnicos();
+            } else {
+                const err = await res.json();
+                Swal.fire('Erro', err.error || 'Falha ao excluir. Verifique se há equipamentos vinculados.', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Erro', 'Erro de conexão.', 'error');
+        }
+    }
 }
 
 // === DISTRIBUIÇÃO ===
 async function loadDistribuicao() {
     try {
         // History
-        const rHist = await fetch(`${API_URL}/distribuicoes`);
+        const rHist = await apiFetch(`${API_URL}/distribuicoes`);
         const hData = await rHist.json();
         const tbody = document.getElementById('tbody-distribuicoes');
         tbody.innerHTML = '';
@@ -420,10 +864,10 @@ let distribuicaoTeckList = [];
 let distribuicaoEqList = [];
 
 async function loadDistribuicaoSelectors() {
-    const rTec = await fetch(`${API_URL}/tecnicos`);
+    const rTec = await apiFetch(`${API_URL}/tecnicos`);
     distribuicaoTeckList = await rTec.json();
     
-    const rEq = await fetch(`${API_URL}/equipamentos`);
+    const rEq = await apiFetch(`${API_URL}/equipamentos`);
     distribuicaoEqList = await rEq.json();
     
     // Populate Origem
@@ -488,7 +932,7 @@ async function salvarDistribuicaoIndividual() {
             ? { ids: eqIds, action: 'devolve' } 
             : { ids: eqIds, action: 'assign', tecnico_id: destId };
 
-        const res = await fetch(`${API_URL}/equipamentos/move`, {
+        const res = await apiFetch(`${API_URL}/equipamentos/move`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload)
@@ -498,7 +942,8 @@ async function salvarDistribuicaoIndividual() {
             Swal.fire('Sucesso', `Movimentação processada: ${eqIds.length} unidade(s)!`, 'success');
             loadDistribuicao();
         } else {
-            Swal.fire('Erro', 'Falha ao processar movimentação.', 'error');
+            const err = await res.json();
+            Swal.fire('Erro', err.error || err.message || 'Falha ao processar movimentação.', 'error');
         }
     } catch(e) { console.error(e); }
 }
@@ -515,7 +960,7 @@ async function handleAssignUpload(event) {
         const json = XLSX.utils.sheet_to_json(firstSheet);
         
         // Fetch equipments and tech arrays map
-        const resEq = await fetch(`${API_URL}/equipamentos`);
+        const resEq = await apiFetch(`${API_URL}/equipamentos`);
         const eqsInfo = await resEq.json();
         const eqMap = {}; 
         eqsInfo.forEach(eq => {
@@ -525,7 +970,7 @@ async function handleAssignUpload(event) {
             }
         });
         
-        const resTec = await fetch(`${API_URL}/tecnicos`);
+        const resTec = await apiFetch(`${API_URL}/tecnicos`);
         const tecsInfo = await resTec.json();
         const tecMap = {};
         tecsInfo.forEach(t => {
@@ -552,7 +997,7 @@ async function handleAssignUpload(event) {
         for (const tecId in assignments) {
             const ids = assignments[tecId];
             if(ids.length > 0) {
-                await fetch(`${API_URL}/equipamentos/assign`, {
+                await apiFetch(`${API_URL}/equipamentos/assign`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ ids: ids, tecnico_id: tecId })
@@ -605,7 +1050,7 @@ async function handleServicosUpload(event) {
         if (payloads.length === 0) return Swal.fire('Atenção', 'Nenhum dado com "serial" e "tipo_servico" válido encontrado!', 'warning');
         
         try {
-            const res = await fetch(`${API_URL}/servicos/bulk`, {
+            const res = await apiFetch(`${API_URL}/servicos/bulk`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payloads)
@@ -628,7 +1073,7 @@ async function recolherEquipamentoManual() {
     if(!serial) return Swal.fire('Atenção', 'Digite um Serial!', 'warning');
     
     try {
-        const res = await fetch(`${API_URL}/equipamentos/recolher`, {
+        const res = await apiFetch(`${API_URL}/equipamentos/recolher`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify([{ serial }])
@@ -667,7 +1112,7 @@ async function handleRecolherUpload(event) {
         if (payloads.length === 0) return Swal.fire('Atenção', 'Nenhum serial válido encontrado!', 'warning');
         
         try {
-            const res = await fetch(`${API_URL}/equipamentos/recolher`, {
+            const res = await apiFetch(`${API_URL}/equipamentos/recolher`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payloads)
@@ -685,7 +1130,7 @@ async function handleRecolherUpload(event) {
 
 async function loadServicos() {
     try {
-        const res = await fetch(`${API_URL}/servicos`);
+        const res = await apiFetch(`${API_URL}/servicos`);
         const data = await res.json();
         const tbody = document.getElementById('tbody-servicos');
         tbody.innerHTML = '';
@@ -707,14 +1152,14 @@ async function loadServicos() {
 
 async function loadServiceFormData() {
     // Load Tecnicos Dropdown
-    const tRes = await fetch(`${API_URL}/tecnicos`);
+    const tRes = await apiFetch(`${API_URL}/tecnicos`);
     const ts = await tRes.json();
     const tSel = document.getElementById('sel-tecnico');
     tSel.innerHTML = '<option value="">Selecione...</option>';
     ts.forEach(t => tSel.innerHTML += `<option value="${t.id}">${t.nome}</option>`);
 
     // Load Tipos
-    const cRes = await fetch(`${API_URL}/configuracoes`);
+    const cRes = await apiFetch(`${API_URL}/configuracoes`);
     const confs = await cRes.json();
     const tServ = confs.find(c => c.chave === 'tipos_servico');
     const sSel = document.getElementById('sel-tipo-servico');
@@ -728,7 +1173,7 @@ async function loadTecnicoInventory() {
     const tecId = document.getElementById('sel-tecnico').value;
     if(!tecId) return;
     
-    const eRes = await fetch(`${API_URL}/equipamentos`);
+    const eRes = await apiFetch(`${API_URL}/equipamentos`);
     const eqs = await eRes.json();
     
     // Filter equipments Em Estoque for this Technician
@@ -773,7 +1218,7 @@ async function saveServico() {
     if(!tId || !eId || !sType) return Swal.fire('Atenção', 'Selecione as opções!', 'warning');
     
     try {
-        const res = await fetch(`${API_URL}/servicos`, {
+        const res = await apiFetch(`${API_URL}/servicos`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ equipamento_id: eId, tecnico_id: tId, tipo_servico: sType, placa_obs })
@@ -794,7 +1239,7 @@ let tiposArray = [];
 let modelosArray = [];
 
 async function loadConfiguracoes() {
-    const cRes = await fetch(`${API_URL}/configuracoes`);
+    const cRes = await apiFetch(`${API_URL}/configuracoes`);
     const confs = await cRes.json();
     const tServ = confs.find(c => c.chave === 'tipos_servico');
     const tMod = confs.find(c => c.chave === 'modelos_equipamento');
@@ -828,6 +1273,8 @@ function renderModelos() {
     modelosArray.forEach((t, i) => {
         if(container) container.innerHTML += `<div class="service-badge" style="background:#f3f4f6; color:#333; border:1px solid #ccc;">${t} <i class="fa-solid fa-xmark" style="cursor:pointer; color:#ef4444;" onclick="removerModeloEquip(${i})"></i></div>`;
         if(selModelo) selModelo.innerHTML += `<option value="${t}">${t}</option>`;
+        const selEditModelo = document.getElementById('edit-eq-modelo-list');
+        if(selEditModelo) selEditModelo.innerHTML += `<option value="${t}">${t}</option>`;
     });
 }
 
@@ -859,7 +1306,7 @@ function removerModeloEquip(index) {
 }
 
 async function saveConfigToDB(chave, arrayData, renderCallback) {
-    await fetch(`${API_URL}/configuracoes/${chave}`, {
+    await apiFetch(`${API_URL}/configuracoes/${chave}`, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ valor: JSON.stringify(arrayData) })
@@ -868,24 +1315,64 @@ async function saveConfigToDB(chave, arrayData, renderCallback) {
 }
 
 // === RELATÓRIOS ===
+let allRelatorioData = [];
+let chartInstance = null;
+
 async function loadRelatorios() {
-    // Populate dropdowns for History filter
     try {
-        const rTec = await fetch(`${API_URL}/tecnicos`);
+        // 1. Carregar Dados de Ciclo de Vida (Dashboard Analytics)
+        const resDev = await apiFetch(`${API_URL}/relatorios/devolucoes`);
+        const dataDev = await resDev.json();
+        allRelatorioData = dataDev;
+
+        // Preencher counters do Dashboard
+        const totalDev = dataDev.reduce((acc, curr) => acc + curr.qtd_devolucoes, 0);
+        const recurrentCount = dataDev.filter(i => i.qtd_devolucoes > 1).length;
+        if(document.getElementById('rep-total-devolucoes')) document.getElementById('rep-total-devolucoes').innerText = totalDev;
+        if(document.getElementById('rep-itens-recorrentes')) document.getElementById('rep-itens-recorrentes').innerText = recurrentCount;
+
+        renderRelatorioTable(dataDev);
+        
+        // Novo Dashboard Quantitativo de Devoluções
+        await loadAnalyticsDevolucoes();
+
+        // Popular Select de Técnicos (Filtro Devoluções e Analytics)
+        const selTechDev = document.getElementById('filter-rep-tecnico');
+        const selTechAnalytics = document.getElementById('filter-analytics-tecnico');
+        
+        if(selTechDev || selTechAnalytics) {
+            const techsDev = [...new Set(dataDev.map(i => i.ultimo_tecnico).filter(t => t !== 'N/A'))].sort();
+            const options = '<option value="">Todos os Técnicos</option>' + techsDev.map(t => `<option value="${t}">${t}</option>`).join('');
+            
+            if(selTechDev) selTechDev.innerHTML = options;
+            if(selTechAnalytics) selTechAnalytics.innerHTML = options;
+        }
+
+        renderRelatorioTable(dataDev);
+        renderRelatorioChart(dataDev);
+
+        // 2. Carregar Dropdowns para Histórico de Serviços (Relatórios de Gestão)
+        const rTec = await apiFetch(`${API_URL}/tecnicos`);
         const tecs = await rTec.json();
         const tSel = document.getElementById('rel_srv_tec');
-        tSel.innerHTML = '<option value="">-- Todos Técnicos --</option>';
-        tecs.forEach(t => tSel.innerHTML += `<option value="${t.id}">${t.nome}</option>`);
+        if(tSel) {
+            tSel.innerHTML = '<option value="">-- Todos Técnicos --</option>';
+            tecs.forEach(t => tSel.innerHTML += `<option value="${t.id}">${t.nome}</option>`);
+        }
 
-        const cRes = await fetch(`${API_URL}/configuracoes`);
+        const cRes = await apiFetch(`${API_URL}/configuracoes`);
         const confs = await cRes.json();
         const tServ = confs.find(c => c.chave === 'tipos_servico');
         const sSel = document.getElementById('rel_srv_tipo');
-        sSel.innerHTML = '<option value="">-- Todos os Tipos --</option>';
-        if(tServ) {
-            JSON.parse(tServ.valor).forEach(t => sSel.innerHTML += `<option value="${t}">${t}</option>`);
+        if(sSel) {
+            sSel.innerHTML = '<option value="">-- Todos os Tipos --</option>';
+            if(tServ) {
+                JSON.parse(tServ.valor).forEach(t => sSel.innerHTML += `<option value="${t}">${t}</option>`);
+            }
         }
-    } catch(e) { console.error(e); }
+    } catch(e) { 
+        console.error("Erro ao carregar relatórios:", e);
+    }
 }
 
 function processGenericReport(title, headers, rows, isExcel, excelName) {
@@ -908,7 +1395,7 @@ function processGenericReport(title, headers, rows, isExcel, excelName) {
 }
 
 async function exportFullDatabase() {
-    const res = await fetch(`${API_URL}/equipamentos`);
+    const res = await apiFetch(`${API_URL}/equipamentos`);
     const eqs = await res.json();
     const ws = XLSX.utils.json_to_sheet(eqs);
     const wb = XLSX.utils.book_new();
@@ -917,7 +1404,7 @@ async function exportFullDatabase() {
 }
 
 async function relatorioEstoque(isExcel) {
-    const res = await fetch(`${API_URL}/equipamentos`);
+    const res = await apiFetch(`${API_URL}/equipamentos`);
     const eqs = await res.json();
     const data = eqs.filter(e => e.status === 'Em Estoque Técnico');
     
@@ -934,10 +1421,10 @@ async function relatorioEstoque(isExcel) {
 }
 
 async function relatorioInstalados(isExcel) {
-    const res = await fetch(`${API_URL}/servicos`);
+    const res = await apiFetch(`${API_URL}/servicos`);
     const srvs = await res.json();
     
-    const resEq = await fetch(`${API_URL}/equipamentos`);
+    const resEq = await apiFetch(`${API_URL}/equipamentos`);
     const eqs = await resEq.json();
     const instEqs = eqs.filter(e => e.status === 'Instalado');
     
@@ -965,9 +1452,9 @@ async function relatorioInstalados(isExcel) {
 }
 
 async function relatorioCidades(isExcel) {
-    const resTec = await fetch(`${API_URL}/tecnicos`);
+    const resTec = await apiFetch(`${API_URL}/tecnicos`);
     const tecnicos = await resTec.json();
-    const resEq = await fetch(`${API_URL}/equipamentos`);
+    const resEq = await apiFetch(`${API_URL}/equipamentos`);
     const eqs = await resEq.json();
     
     const map = {};
@@ -1005,27 +1492,44 @@ async function relatorioSrvHist(isExcel) {
     const tId = document.getElementById('rel_srv_tec').value;
     const tipo = document.getElementById('rel_srv_tipo').value;
 
-    const res = await fetch(`${API_URL}/servicos`);
+    const res = await apiFetch(`${API_URL}/servicos`);
     const srvs = await res.json();
     
+    // Filtro aprimorado
     const filtered = srvs.filter(s => {
-        let f1=true, f2=true, f3=true, f4=true;
-        if(dI) f1 = new Date(s.data) >= new Date(dI);
-        if(dF) f2 = new Date(s.data) <= new Date(dF + 'T23:59:59');
-        if(tId) f3 = String(s.tecnico_id) === String(tId);
-        if(tipo) f4 = s.tipo_servico === tipo;
-        return f1 && f2 && f3 && f4;
+        let matchDate = true;
+        let matchTec = true;
+        let matchTipo = true;
+
+        if (dI) {
+            const start = new Date(dI);
+            start.setHours(0,0,0,0);
+            matchDate = matchDate && new Date(s.data) >= start;
+        }
+        if (dF) {
+            const end = new Date(dF);
+            end.setHours(23,59,59,999);
+            matchDate = matchDate && new Date(s.data) <= end;
+        }
+        if (tId) {
+            matchTec = String(s.tecnico_id) === String(tId);
+        }
+        if (tipo) {
+            matchTipo = s.tipo_servico === tipo;
+        }
+        return matchDate && matchTec && matchTipo;
     });
 
-    const headers = ['Data', 'Técnico', 'Tipo Serviço', 'Nº Interno', 'Serial'];
+    const headers = ['Data', 'Técnico', 'Tipo Serviço', 'Nº Interno', 'Serial', 'Placa/Obs'];
     const rows = filtered.map(s => [
-        new Date(s.data).toLocaleString(),
+        new Date(s.data).toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}),
         s.tecnico_nome,
         s.tipo_servico,
-        s.num_interno,
-        s.serial
+        s.num_interno || '-',
+        s.serial || '-',
+        s.placa_obs || '-'
     ]);
-    
+
     processGenericReport(`Serviços (${filtered.length} reg)`, headers, rows, isExcel, 'Historico_Servicos');
 }
 
@@ -1090,4 +1594,399 @@ function dlTemplateTecs() {
         { nome: "João Alves", cidade_principal: "São Paulo", sub_cidades: "Osasco, Guarulhos" },
         { nome: "Pedro Lima", cidade_principal: "Campinas", sub_cidades: "Valinhos, Vinhedo" }
     ]);
+}
+// === USUÁRIOS (MASTER) ===
+async function loadUsuarios() {
+    try {
+        const res = await apiFetch(`${API_URL}/users`);
+        const users = await res.json();
+        const tbody = document.getElementById('tbody-usuarios');
+        tbody.innerHTML = '';
+
+        users.forEach(u => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${u.email}</td>
+                <td><span class="badge ${u.role === 'master' ? 'badge-danger' : 'badge-info'}">${u.role.toUpperCase()}</span></td>
+                <td>${new Date(u.created_at).toLocaleDateString()}</td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick="changeUserRole('${u.id}', '${u.role}')" title="Alterar Cargo">
+                        <i class="fa-solid fa-user-tag"></i>
+                    </button>
+                    ${u.email !== localStorage.getItem('stoki_email') ? `
+                    <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}')" title="Excluir">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>` : ''}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) { console.error(e); }
+}
+
+async function openAddUserForm() {
+    const { value: formValues } = await Swal.fire({
+        title: 'Cadastrar Novo Usuário',
+        html:
+            '<div style="text-align:left;">' +
+            '<label style="display:block; margin-bottom:5px; font-weight:500;">E-mail</label>' +
+            '<input id="swal-email" class="swal2-input" placeholder="usuario@email.com" style="margin-top:0; width:100%; box-sizing:border-box;">' +
+            '<label style="display:block; margin-top:15px; margin-bottom:5px; font-weight:500;">Senha Provisória</label>' +
+            '<input id="swal-pass" type="password" class="swal2-input" placeholder="••••••••" style="margin-top:0; width:100%; box-sizing:border-box;">' +
+            '<label style="display:block; margin-top:15px; margin-bottom:5px; font-weight:500;">Papel / Cargo</label>' +
+            '<select id="swal-role" class="swal2-select" style="margin-top:0; width:100%; box-sizing:border-box;">' +
+            '<option value="visualizador">Visualizador</option>' +
+            '<option value="operador">Operador</option>' +
+            '<option value="gerente">Gerente</option>' +
+            '<option value="master">Master (Admin)</option>' +
+            '</select>' +
+            '</div>',
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: 'Criar Usuário',
+        cancelButtonText: 'Cancelar',
+        preConfirm: () => {
+            const email = document.getElementById('swal-email').value;
+            const password = document.getElementById('swal-pass').value;
+            const role = document.getElementById('swal-role').value;
+            if (!email || !password) {
+                Swal.showValidationMessage('Por favor, preencha E-mail e Senha');
+                return false;
+            }
+            return { email, password, role };
+        }
+    });
+
+    if (formValues) {
+        try {
+            const res = await apiFetch(`${API_URL}/users`, {
+                method: 'POST',
+                body: JSON.stringify(formValues)
+            });
+            if (res.ok) {
+                Swal.fire('Sucesso', 'Usuário criado com sucesso!', 'success');
+                loadUsuarios();
+            }
+        } catch (e) {
+            Swal.fire('Erro', e.message, 'error');
+        }
+    }
+}
+
+async function changeUserRole(id, currentRole) {
+    const { value: role } = await Swal.fire({
+        title: 'Alterar Cargo',
+        input: 'select',
+        inputOptions: {
+            'visualizador': 'Visualizador',
+            'operador': 'Operador',
+            'gerente': 'Gerente',
+            'master': 'Master'
+        },
+        inputValue: currentRole,
+        showCancelButton: true
+    });
+
+    if (role) {
+        try {
+            await apiFetch(`${API_URL}/users/${id}/role`, {
+                method: 'PUT',
+                body: JSON.stringify({ role })
+            });
+            loadUsuarios();
+            Swal.fire('Atualizado!', 'O cargo foi alterado.', 'success');
+        } catch (e) {
+            Swal.fire('Erro', e.message, 'error');
+        }
+    }
+}
+
+async function deleteUser(id) {
+    const result = await Swal.fire({
+        title: 'Tem certeza?',
+        text: "O acesso deste usuário será revogado!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'Sim, excluir!'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            await apiFetch(`${API_URL}/users/${id}`, { method: 'DELETE' });
+            loadUsuarios();
+            Swal.fire('Excluído!', 'O usuário foi removido.', 'success');
+        } catch (e) {
+            Swal.fire('Erro', e.message, 'error');
+        }
+    }
+}
+
+// === LOGS (MASTER/GERENTE) ===
+async function loadLogs() {
+    try {
+        const res = await apiFetch(`${API_URL}/audit`);
+        const logs = await res.json();
+        const tbody = document.getElementById('tbody-logs');
+        tbody.innerHTML = '';
+
+        logs.forEach(l => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="font-size:0.75rem">${new Date(l.created_at).toLocaleString()}</td>
+                <td>${l.user_email}</td>
+                <td><span class="badge badge-info">${l.acao}</span></td>
+                <td>${l.tabela_alvo}</td>
+                <td>${l.item_id || '-'}</td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick='viewLogDetail(${JSON.stringify(l)})'>
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) { console.error(e); }
+}
+
+function viewLogDetail(log) {
+    Swal.fire({
+        title: `Detalhes: ${log.acao}`,
+        html: `
+            <div style="text-align:left; font-size:0.85rem;">
+                <p><strong>Tabela:</strong> ${log.tabela_alvo}</p>
+                <p><strong>ID Item:</strong> ${log.item_id}</p>
+                <hr>
+                <p><strong>Dados Anteriores:</strong></p>
+                <pre style="background:#f4f4f4; padding:5px;">${JSON.stringify(log.dados_antigos, null, 2)}</pre>
+                <p><strong>Dados Novos:</strong></p>
+                <pre style="background:#f4f4f4; padding:5px;">${JSON.stringify(log.dados_novos, null, 2)}</pre>
+            </div>
+        `,
+        width: '600px'
+    });
+}
+
+function renderRelatorioTable(data) {
+    const tbody = document.getElementById('tbody-relatorio-devolucoes');
+    if(!tbody) return;
+    tbody.innerHTML = '';
+
+    data.sort((a, b) => b.qtd_devolucoes - a.qtd_devolucoes).forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><strong>${row.num_interno}</strong></td>
+            <td>${row.serial}</td>
+            <td>${row.modelo || '-'}</td>
+            <td>
+                <span class="badge ${row.qtd_devolucoes > 1 ? 'badge-danger' : 'badge-info'}" style="font-size:0.9rem;">
+                    ${row.qtd_devolucoes}x
+                </span>
+            </td>
+            <td><span class="badge ${getStatusClass(row.status_atual)}">${row.status_atual}</span></td>
+            <td>${row.ultimo_tecnico}</td>
+            <td><span style="font-family:monospace; background:#eee; padding:2px 5px; border-radius:3px;">${row.ultima_placa}</span></td>
+            <td>
+                <button class="btn btn-secondary btn-sm" onclick="verHistorico('${row.equipamento_id}')">
+                    <i class="fa-solid fa-clock-rotate-left"></i> Ver Ciclo
+                </button>
+                ${(row.status_atual === 'Deletado' && ['master', 'gerente'].includes(localStorage.getItem('stoki_role'))) 
+                    ? `<button class="btn btn-warning btn-sm" style="margin-left: 5px; background-color: #ffc107; border: none; color: #000;" onclick="restaurarEquipamento('${row.equipamento_id}')"><i class="fa-solid fa-trash-can-arrow-up"></i> Restaurar</button>` 
+                    : ''}
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// === SOFT DELETE RESTORE ACTION ===
+async function restaurarEquipamento(id) {
+    const result = await Swal.fire({
+        title: 'Restaurar Ratreamento?',
+        text: 'Este equipamento será retirado da lixeira e voltará ao estoque principal.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Restaurar',
+        cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const res = await apiFetch(`${API_URL}/equipamentos/${id}/restaurar`, { method: 'PUT' });
+            if (res.ok) {
+                Swal.fire('Restaurado!', 'O equipamento está ativo novamente.', 'success');
+                loadRelatorios();
+            }
+        } catch (e) {
+            Swal.fire({ icon: 'error', title: 'Falha ao Restaurar', text: e.message || 'Houve um conflito na restauração.'});
+        }
+    }
+}
+
+function filterRelatorioDev() {
+    const tech = document.getElementById('filter-rep-tecnico').value.toLowerCase();
+    const search = document.getElementById('filter-rep-search').value.toLowerCase();
+
+    const filtered = allRelatorioData.filter(i => {
+        const matchTech = !tech || (i.ultimo_tecnico || '').toLowerCase() === tech;
+        const matchSearch = !search || 
+            (i.serial || '').toLowerCase().includes(search) || 
+            (i.num_interno || '').toLowerCase().includes(search);
+        return matchTech && matchSearch;
+    });
+
+    renderRelatorioTable(filtered);
+}
+
+function renderRelatorioChart(data) {
+    // This is now handled by loadAnalyticsDevolucoes for the new dashboard
+}
+
+async function loadAnalyticsDevolucoes() {
+    try {
+        const start = document.getElementById('filter-rep-inicio')?.value;
+        const end = document.getElementById('filter-rep-fim')?.value;
+        const source = document.getElementById('filter-rep-origem')?.value;
+        const techName = document.getElementById('filter-analytics-tecnico')?.value;
+
+        // Construir query string
+        let params = new URLSearchParams();
+        if (start) params.append('data_inicio', start);
+        if (end) params.append('data_fim', end);
+        if (source) params.append('origem', source);
+        
+        // Se filtrou por nome de técnico no Analytics, precisamos buscar o ID dele ou 
+        // adaptar o backend para aceitar nome. Para manter consistência, vamos passar como param
+        if (techName) params.append('tecnico_nome', techName);
+
+        const resStats = await apiFetch(`${API_URL}/stats/devolucoes?${params.toString()}`);
+        const stats = await resStats.json();
+
+        // 1. Atualizar Counters
+        const totalDevEl = document.getElementById('rep-total-devolucoes');
+        const totalTratEl = document.getElementById('rep-total-tratamentos');
+        const recurEl = document.getElementById('rep-itens-recorrentes');
+        const pendRelEl = document.getElementById('rep-total-pendentes');
+
+        if (totalDevEl) totalDevEl.innerText = stats.totalDevolucoes;
+        if (totalTratEl) totalTratEl.innerText = stats.totalTratamentos;
+        if (recurEl) recurEl.innerText = stats.rankingEquipamentos.filter(e => e.count > 1).length;
+
+        // Buscar total pendente para o card do relatório também
+        const resBase = await apiFetch(`${API_URL}/stats`);
+        const baseStats = await resBase.json();
+        if (pendRelEl) pendRelEl.innerText = baseStats.pendEq || 0;
+
+        // 2. Gráfico de Recorrência (Equipamentos)
+        const ctxRecur = document.getElementById('chart-devolucoes')?.getContext('2d');
+        if (ctxRecur) {
+            if (chartObjDevRecurrence) chartObjDevRecurrence.destroy();
+            chartObjDevRecurrence = new Chart(ctxRecur, {
+                type: 'bar',
+                data: {
+                    labels: stats.rankingEquipamentos.map(e => e.serial),
+                    datasets: [{
+                        label: 'Vezes Devolvido',
+                        data: stats.rankingEquipamentos.map(e => e.count),
+                        backgroundColor: '#f59e0b',
+                        borderRadius: 5
+                    }]
+                },
+                options: { 
+                    indexAxis: 'y', 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        // 3. Gráfico de Técnicos (Ofensores)
+        const ctxTechDev = document.getElementById('chart-tecnicos-devolucoes')?.getContext('2d');
+        if (ctxTechDev) {
+            if (chartObjTechReturns) chartObjTechReturns.destroy();
+            chartObjTechReturns = new Chart(ctxTechDev, {
+                type: 'bar',
+                data: {
+                    labels: stats.rankingTecnicos.map(t => t.nome),
+                    datasets: [{
+                        label: 'Total de Devoluções',
+                        data: stats.rankingTecnicos.map(t => t.count),
+                        backgroundColor: '#ef4444',
+                        borderRadius: 5
+                    }]
+                },
+                options: { 
+                    indexAxis: 'y', 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        // 4. Gráfico Status Pie (Visão Geral Relatório)
+        const ctxPie = document.getElementById('chart-status-pie')?.getContext('2d');
+        if (ctxPie) {
+            if (chartObjStatusPie) chartObjStatusPie.destroy();
+            chartObjStatusPie = new Chart(ctxPie, {
+                type: 'pie',
+                data: {
+                    labels: ['Disponível', 'Pendente', 'Instalado', 'Estoque'],
+                    datasets: [{
+                        data: [baseStats.dispEq, baseStats.pendEq, baseStats.instEq, baseStats.techEq],
+                        backgroundColor: ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'right' } }
+                }
+            });
+        }
+
+    } catch (e) {
+        console.error("Erro ao carregar analytics de devoluções:", e);
+    }
+}
+            },
+            plugins: {
+                legend: { display: false }
+            }
+        }
+    });
+}
+
+function exportRelatorioExcel() {
+    const data = allRelatorioData.map(i => ({
+        "Nº Interno": i.num_interno,
+        "Serial": i.serial,
+        "Modelo": i.modelo,
+        "Qtd Devoluções": i.qtd_devolucoes,
+        "Status Atual": i.status_atual,
+        "Último Técnico": i.ultimo_tecnico,
+        "Última Placa": i.ultima_placa,
+        "Última Devolução": new Date(i.ultima_devolucao).toLocaleDateString()
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "RelatorioDevolucoes");
+    XLSX.writeFile(workbook, `Relatorio_Devolucoes_${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
+function getStatusClass(status) {
+    if (!status) return '';
+    const s = status.toLowerCase();
+    if (s.includes('disponível')) return 'disponivel';
+    if (s.includes('estoque')) return 'estoque';
+    if (s.includes('instalado')) return 'instalado';
+    if (s.includes('pendente')) return 'pendente';
+    if (s.includes('distribuído')) return 'estoque';
+    if (s.includes('deletado')) return 'deletado';
+    return '';
 }

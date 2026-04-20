@@ -1,10 +1,21 @@
 const { createClient } = require('@supabase/supabase-js');
 
-// Using the same credentials provided in public/js/supabase.js
-// For a production app, you should use environment variables like process.env.SUPABASE_URL
+// Configurações do Supabase
+// RECOMENDADO: Cadastre estas variáveis no painel do Vercel para maior segurança
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://nikrcdkgqqfmiigmaaya.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_13I7wz7owCKZXZhM8V79lQ_6inllWwF';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+if (!SUPABASE_SERVICE_KEY) {
+    console.error('ERRO CRÍTICO: SUPABASE_SERVICE_ROLE_KEY não encontrada no process.env!');
+    process.exit(1);
+}
+
+// Cliente principal usando Service Role para ignorar RLS eゲgerenciar usuários no backend
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+});
 
 module.exports = supabase;
