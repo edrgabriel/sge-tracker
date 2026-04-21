@@ -355,7 +355,7 @@ app.get('/api/stats/devolucoes', async (req, res) => {
 app.get('/api/distribuicoes', async (req, res) => {
     const { data, error } = await supabase
         .from('equipamentos')
-        .select('num_interno, serial, data_distribuicao, tecnicos!inner(nome)')
+        .select('num_interno, serial, data_distribuicao, tecnicos!tecnico_id!inner(nome)')
         .eq('status', 'Em Estoque Técnico')
         .not('data_distribuicao', 'is', null)
         .is('deleted_at', null)
@@ -770,26 +770,32 @@ app.get('/api/stats', async (req, res) => {
     const stats = { totalEq: 0, dispEq: 0, techEq: 0, instEq: 0, pendEq: 0, top_techs: [], chart_techs: [], last_services: [] };
     
     try {
-        const [
-            { count: totalEq },
-            { count: dispEq },
-            { count: techEq },
-            { count: instEq },
-            { count: pendEq },
-            { data: techQs },
-            { data: srvs }
-        ] = await Promise.all([
+        const promises = [
             supabase.from('equipamentos').select('id', { count: 'exact', head: true }).is('deleted_at', null),
             supabase.from('equipamentos').select('id', { count: 'exact', head: true }).eq('status', 'Disponível').is('deleted_at', null),
             supabase.from('equipamentos').select('id', { count: 'exact', head: true }).eq('status', 'Em Estoque Técnico').is('deleted_at', null),
             supabase.from('equipamentos').select('id', { count: 'exact', head: true }).eq('status', 'Instalado').is('deleted_at', null),
             supabase.from('equipamentos').select('id', { count: 'exact', head: true }).eq('status', 'Pendente').is('deleted_at', null),
-            
-            // To get grouping equivalent: Fetch all Em Estoque and group in memory
             supabase.from('equipamentos').select('tecnico_id, tecnicos!tecnico_id(nome)').eq('status', 'Em Estoque Técnico').not('tecnico_id', 'is', null).is('deleted_at', null),
-            
             supabase.from('servicos').select('data, tipo_servico, equipamentos!inner(serial), tecnicos!inner(nome)').order('data', { ascending: false }).limit(10)
-        ]);
+        ];
+
+        const results = await Promise.all(promises);
+        
+        // Verifica se houve falha pontual em alguma das promessas para não processar falso 0
+        const failed = results.find(r => r.error != null);
+        if (failed) {
+            console.error("Erro critico interno no banco ao computar stats:", failed.error);
+            return res.status(500).json({ error: "Erro de integridade ao processar DB na rota Stats", details: failed.error });
+        }
+
+        const totalEq = results[0].count;
+        const dispEq = results[1].count;
+        const techEq = results[2].count;
+        const instEq = results[3].count;
+        const pendEq = results[4].count;
+        const techQs = results[5].data;
+        const srvs = results[6].data;
         
         stats.totalEq = totalEq || 0;
         stats.dispEq = dispEq || 0;
