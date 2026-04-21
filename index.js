@@ -105,8 +105,8 @@ app.get('/api/equipamentos', async (req, res) => {
         .from('equipamentos')
         .select(`
             *, 
-            tecnicos(nome),
-            tecnicos_anterior:id_tecnico_anterior(nome)
+            tecnicos!tecnico_id(nome),
+            tecnicos_anterior:tecnicos!id_tecnico_anterior(nome)
         `)
         .is('deleted_at', null);
         
@@ -786,7 +786,7 @@ app.get('/api/stats', async (req, res) => {
             supabase.from('equipamentos').select('id', { count: 'exact', head: true }).eq('status', 'Pendente').is('deleted_at', null),
             
             // To get grouping equivalent: Fetch all Em Estoque and group in memory
-            supabase.from('equipamentos').select('tecnico_id, tecnicos(nome)').eq('status', 'Em Estoque Técnico').not('tecnico_id', 'is', null).is('deleted_at', null),
+            supabase.from('equipamentos').select('tecnico_id, tecnicos!tecnico_id(nome)').eq('status', 'Em Estoque Técnico').not('tecnico_id', 'is', null).is('deleted_at', null),
             
             supabase.from('servicos').select('data, tipo_servico, equipamentos!inner(serial), tecnicos!inner(nome)').order('data', { ascending: false }).limit(10)
         ]);
