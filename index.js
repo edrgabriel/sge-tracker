@@ -26,7 +26,10 @@ async function authenticateUser(req, res, next) {
     const token = authHeader.split(' ')[1];
     const { data: { user }, error } = await supabase.auth.getUser(token);
 
-    if (error || !user) return res.status(401).json({ error: 'Token inválido ou expirado' });
+    if (error || !user) {
+        console.error("ERRO AUTH.GETUSER:", error);
+        return res.status(401).json({ error: 'Token inválido', detalhes: error });
+    }
 
     // Buscar perfil do usuário para pegar o Role
     const { data: perfil, error: perfilError } = await supabase
@@ -76,6 +79,17 @@ async function logAudit(userId, email, acao, tabela, itemId, antigo, novo) {
 }
 
 // ==== API ROUTES ====
+
+// Debug Privado (Será removido em breve)
+app.get('/api/debug-env', (req, res) => {
+    res.json({
+        has_url: !!process.env.SUPABASE_URL,
+        has_role_key: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+        has_service_key: !!process.env.SUPABASE_SERVICE_KEY,
+        has_supabase_key: !!process.env.SUPABASE_KEY,
+        key_str_length: process.env.SUPABASE_SERVICE_ROLE_KEY ? process.env.SUPABASE_SERVICE_ROLE_KEY.length : 0
+    });
+});
 
 // Aplicar autenticação em todas as rotas de API
 app.use('/api', authenticateUser);

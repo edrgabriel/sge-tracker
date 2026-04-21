@@ -2,10 +2,10 @@ const { createClient } = require('@supabase/supabase-js');
 
 // Configurações do Supabase
 // RECOMENDADO: Cadastre estas variáveis no painel do Vercel para maior segurança
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://nikrcdkgqqfmiigmaaya.supabase.co';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'missing_key_configure_in_vercel';
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://nikrcdkgqqfmiigmaaya.supabase.co';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || 'missing_key_configure_in_vercel';
 
-if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+if (!SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_KEY === 'missing_key_configure_in_vercel') {
     console.error('ERRO CRITICO: SUPABASE_SERVICE_ROLE_KEY não encontrada! Configure no painel do Vercel.');
 }
 
