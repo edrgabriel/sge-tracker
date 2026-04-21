@@ -1953,14 +1953,6 @@ async function loadAnalyticsDevolucoes() {
         console.error("Erro ao carregar analytics de devoluções:", e);
     }
 }
-            },
-            plugins: {
-                legend: { display: false }
-            }
-        }
-    });
-}
-
 function exportRelatorioExcel() {
     const data = allRelatorioData.map(i => ({
         "Nº Interno": i.num_interno,
